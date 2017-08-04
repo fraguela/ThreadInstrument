@@ -104,7 +104,8 @@ int main(int argc, char **argv)
   ThreadInstrument::end_activity(RUN_ACT);
   
   std::cout << ntb << " tasks begun and " << nte << " tasks ended\n";
-
+  std::cout << ThreadInstrument::nThreadsWithActivity() << " threads with activity\n";
+  
   for(unsigned i = 0; i < ThreadInstrument::nThreadsWithActivity(); ++i) {
     std::cout << "--------------------\n";
     std::cout << "Activity for thread " << i << " :\n";

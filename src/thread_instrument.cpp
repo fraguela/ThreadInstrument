@@ -26,7 +26,7 @@ namespace {
     
     const unsigned id_;   ///< # of the thread associated
     ThreadInstrument::Int2EventDataMap_t int2EventDataMap_;
-    
+
     IdentifiedEventData(unsigned in_id)
     : id_(in_id)
     {}
@@ -166,7 +166,6 @@ namespace {
     
     ConcurrentSList<value_type> storage_;
     
-    std::atomic<size_t> size_;
     std::atomic_flag lock_;
     
   public:
@@ -174,7 +173,6 @@ namespace {
     using iterator = typename ConcurrentSList<value_type>::iterator;
 
     ConcurrentSMap() :
-    size_(0),
     lock_{ATOMIC_FLAG_INIT}
     {}
     
@@ -190,11 +188,11 @@ namespace {
       return it;
     }
     
-    size_t size() const { return size_; }
+    size_t unsafe_size() const { return storage_.unsafe_size(); }
 
     std::pair<iterator,bool> emplace(const Key& key, Val&& val) {
       storage_.push(value_type(key, std::forward<Val>(val)));
-      return {find(key), true};
+      return {find(key), true}; // Very inefficient for the general case, but ok here
     }
   };
   
@@ -204,10 +202,11 @@ namespace {
   Thr2Ev_t GlobalEventMap;
 
   IdentifiedEventData& GetThreadRawData(const std::thread::id this_id)
-  {
+  { static std::atomic<unsigned> nthreads {0};
+
     auto it = GlobalEventMap.find(this_id);
     if (it == GlobalEventMap.end()) {
-      auto ins_pair = GlobalEventMap.emplace(this_id, IdentifiedEventData(GlobalEventMap.size()));
+      auto ins_pair = GlobalEventMap.emplace(this_id, IdentifiedEventData(nthreads++));
       assert(ins_pair.second);
       it = ins_pair.first;
     }
@@ -329,7 +328,7 @@ namespace ThreadInstrument {
   
   unsigned nThreadsWithActivity()
   {
-    return GlobalEventMap.size();
+    return GlobalEventMap.unsafe_size();
   }
   
   unsigned getMyThreadNumber()

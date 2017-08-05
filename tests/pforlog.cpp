@@ -30,7 +30,7 @@
 
 const char *activity_names [] = { "RUN_ACT", "SPRINTF_ACT", "WAIT_ACT", "PARAL_ACT", "SEQ_ACT", "MISC_ACT" };
 
-#define N 200
+#define N 300
 
 static std::atomic<int> my_io_lock, ntb, nte;
 
@@ -48,6 +48,18 @@ std::string wait_act_printer(void *p) {
 
 std::string paral_act_printer(void *p) {
   return std::string(activity_names[PARAL_ACT]) + (p ? " END" : " BEGIN");
+}
+
+std::string seq_act_printer(void *p) {
+  return std::string(activity_names[SEQ_ACT]) + (p ? " END" : " BEGIN");
+}
+
+std::string misc_act_printer(void *p) {
+  return std::string(activity_names[MISC_ACT]) + (p ? " END" : " BEGIN");
+}
+
+std::string generic_printer(unsigned event, void *p) {
+  return "This was " + std::to_string(event) + "=" + (p ? " END" : " BEGIN");
 }
 
 //////////////////// END EVENT PRINTERS ////////////////////
@@ -68,9 +80,12 @@ void mx(float *c, float *a, float *b, int n)
 
 struct ParallelStuff {
   
-  bool silent_;
-  
-  ParallelStuff(bool silent) : silent_(silent)
+  const bool silent_;
+  const bool do_nice_print_;
+
+  ParallelStuff(bool silent, bool do_nice_print) :
+  silent_(silent),
+  do_nice_print_(do_nice_print)
   {}
   
   void operator()(int begin, int end) const  {
@@ -78,29 +93,29 @@ struct ParallelStuff {
     
     ntb++;
     
-    ThreadInstrument::log(SPRINTF_ACT, 0);
+    ThreadInstrument::log(SPRINTF_ACT, 0, do_nice_print_);
     sprintf(buf, " [%d, %d) for thread %u\n", begin, end, ThreadInstrument::getMyThreadNumber());
-    ThreadInstrument::log(SPRINTF_ACT, END_EVENT);
+    ThreadInstrument::log(SPRINTF_ACT, END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(PARAL_ACT, 0);
-    mx((float *)c, (float *)a, (float *)b, 150);
-    ThreadInstrument::log(PARAL_ACT, END_EVENT);
+    ThreadInstrument::log(PARAL_ACT, 0, do_nice_print_);
+    mx((float *)c, (float *)a, (float *)b, 300);
+    ThreadInstrument::log(PARAL_ACT, END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(WAIT_ACT, 0);
+    ThreadInstrument::log(WAIT_ACT, 0, do_nice_print_);
     int should_be = 0;
     while(!my_io_lock.compare_exchange_weak(should_be, 1)) {
       should_be = 0;
     }
-    ThreadInstrument::log(WAIT_ACT, 101);
+    ThreadInstrument::log(WAIT_ACT, END_EVENT, do_nice_print_);
       
-    ThreadInstrument::log(SEQ_ACT, 0);
+    ThreadInstrument::log(SEQ_ACT, 0, do_nice_print_);
     mx((float *)c, (float *)a, (float *)b, 80);
-    ThreadInstrument::log(SEQ_ACT, 101);
+    ThreadInstrument::log(SEQ_ACT, END_EVENT, do_nice_print_);
       
     if(!silent_) {
-      ThreadInstrument::log(MISC_ACT, 0);
+      ThreadInstrument::log(MISC_ACT, 0, do_nice_print_);
       std::cerr << std::this_thread::get_id() << buf;
-      ThreadInstrument::log(MISC_ACT, END_EVENT);
+      ThreadInstrument::log(MISC_ACT, END_EVENT, do_nice_print_);
     }
     
     my_io_lock = 0;
@@ -112,21 +127,18 @@ struct ParallelStuff {
   
 };
 
-
-int main(int argc, char **argv)
+void test1(int rangelim, bool do_nice_print)
 { std::vector<std::thread> v;
   
-  ThreadInstrument::log(RUN_ACT, 0);
+  if (!do_nice_print) {
+    ThreadInstrument::log(RUN_ACT, 0);
+  }
   
   my_io_lock = 0;
   ntb = 0;
   nte = 0;
   
-  const int rangelim = (argc == 1) ? std::thread::hardware_concurrency() : atoi(argv[1]);
-  
-  std::cout << "Running " << rangelim << " tasks\n";
-
-  const ParallelStuff ps(false);
+  const ParallelStuff ps(false, do_nice_print);
   
   for (int i = 0; i < rangelim; i++) {
     v.emplace_back(ps, i, i+1);
@@ -136,17 +148,43 @@ int main(int argc, char **argv)
     t.join();
   }
   
-  ThreadInstrument::log(RUN_ACT, END_EVENT);
-  
+  if (!do_nice_print) {
+    ThreadInstrument::log(RUN_ACT, END_EVENT);
+  }
+
   std::cout << ntb << " tasks begun and " << nte << " tasks ended\n";
   
   ThreadInstrument::dumpLog();
+}
+
+int main(int argc, char **argv)
+{ std::vector<std::thread> v;
+
+  const int rangelim = (argc == 1) ? std::thread::hardware_concurrency() : atoi(argv[1]);
   
-  // Now we test signals + user defined event printers
+  std::cout << "Running " << rangelim << " tasks\n";
+
+  // Initial test without printers
+
+  test1(rangelim, false);
+  
+   // Test user defined generic event printer
+  
+  ThreadInstrument::registerLogPrinter(generic_printer);
+  
+  test1(rangelim, false);
+
+  // Test user defined event printers
 
   ThreadInstrument::registerLogPrinter(SPRINTF_ACT, sprintf_act_printer);
   ThreadInstrument::registerLogPrinter(WAIT_ACT, wait_act_printer);
   ThreadInstrument::registerLogPrinter(PARAL_ACT, paral_act_printer);
+  ThreadInstrument::registerLogPrinter(SEQ_ACT, seq_act_printer);
+  ThreadInstrument::registerLogPrinter(MISC_ACT, misc_act_printer);
+  
+  test1(rangelim, true);
+  
+  // Test signals
   
   ThreadInstrument::registerInspector(myfunnyinspector);
   
@@ -158,7 +196,7 @@ int main(int argc, char **argv)
     
     v.clear();
 
-    const ParallelStuff ps_silent(true);
+    const ParallelStuff ps_silent(true, true);
     
     for (int i = 0; i < rangelim; i++) {
       v.emplace_back(ps_silent, i, i+1);

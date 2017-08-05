@@ -32,7 +32,10 @@ namespace {
     {}
     
   };
-  
+
+  /// Number of threads that have registered profiling activity
+  std::atomic<unsigned> NProfiledThreads {0};
+
   template<typename T>
   class ConcurrentSList {
     
@@ -127,7 +130,7 @@ namespace {
       }
       head_ = nullptr;
     }
-    
+
     bool try_pop(T& val) {
       Node *q;
       Node *p = head_.load(std::memory_order_relaxed);
@@ -202,11 +205,11 @@ namespace {
   Thr2Ev_t GlobalEventMap;
 
   IdentifiedEventData& GetThreadRawData(const std::thread::id this_id)
-  { static std::atomic<unsigned> nthreads {0};
+  {
 
     auto it = GlobalEventMap.find(this_id);
     if (it == GlobalEventMap.end()) {
-      auto ins_pair = GlobalEventMap.emplace(this_id, IdentifiedEventData(nthreads++));
+      auto ins_pair = GlobalEventMap.emplace(this_id, IdentifiedEventData(NProfiledThreads++));
       assert(ins_pair.second);
       it = ins_pair.first;
     }
@@ -241,13 +244,22 @@ namespace {
 
     return ret;
   }
+  
   /////////////////////////// LOGS ///////////////////////////
   
+  /// Records the beginning of the execution of the program
+  const ThreadInstrument::time_point_t StartExecutionTimePoint = ThreadInstrument::clock_t::now();
+
   struct LogEvent {
 
     std::thread::id id_;
+    ThreadInstrument::time_point_t when_;
     void *data_;
     unsigned event_id_;
+    
+    LogEvent(ThreadInstrument::time_point_t when, unsigned event_id, void *data)
+    : id_(std::this_thread::get_id()), when_(when), data_(data), event_id_(event_id)
+    { }
     
     LogEvent(unsigned event_id, void *data)
     : id_(std::this_thread::get_id()), data_(data), event_id_(event_id)
@@ -265,6 +277,9 @@ namespace {
   
   /// User function to run when SIGUSR1 is received
   void (*Inspector)();
+  
+  /// Generic printer for all events, if provided by user
+   ThreadInstrument::AllLogPrinter_t AllLogPrinter = nullptr;
   
   /// Dumps ::Log when a SIGUSR1 is received 
   void catch_function(int signal)
@@ -288,7 +303,7 @@ namespace {
   
   RunThisStatically A;
   
-}
+} // anonymous namespace
 
 namespace ThreadInstrument {
 
@@ -298,6 +313,8 @@ namespace ThreadInstrument {
     currentlyRunning = currentlyRunning || other.currentlyRunning;
     return *this;
   }
+
+namespace internal {
 
   void begin_activity_inner(int activity)
   {
@@ -325,7 +342,9 @@ namespace ThreadInstrument {
     ed.lastInvocation = t;
     ed.currentlyRunning = false;
   }
-  
+
+}; // internal
+
   unsigned nThreadsWithActivity()
   {
     return GlobalEventMap.unsafe_size();
@@ -336,7 +355,7 @@ namespace ThreadInstrument {
     return GetMyThreadRawData().id_;
   }
   
-  const Int2EventDataMap_t& getActivity(unsigned n)
+  Int2EventDataMap_t& getActivity(unsigned n)
   {
     assert(n < nThreadsWithActivity());
     return getThreadDataByNumber(n);
@@ -357,23 +376,34 @@ namespace ThreadInstrument {
 	r += (*it).second;
       }
     }
-    
+
     return m;
   }
   
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names)
+  void clearAllActivity()
   {
+    for (Thr2Ev_t::iterator it = GlobalEventMap.begin(); it != GlobalEventMap.end(); ++it) {
+      it->second.int2EventDataMap_.clear();
+    }
+  }
+
+  void printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names, std::ostream& s)
+  { char buf_final[256];
+
     Int2EventDataMap_t::const_iterator itend = m.end();
     for(Int2EventDataMap_t::const_iterator it = m.begin(); it != itend; ++it) {
       int activity = (*it).first;
       if((names != 0) && (names[activity] != 0))
-	printf("Event %16s : %lf seconds %u invocations\n", names[activity], (*it).second.time, (*it).second.invocations);
+	sprintf(buf_final, "Event %16s : %lf seconds %u invocations\n", names[activity], (*it).second.time, (*it).second.invocations);
       else
-	printf("Event %u : %lf seconds %u invocations\n", activity, (*it).second.time, (*it).second.invocations);
+	sprintf(buf_final, "Event %u : %lf seconds %u invocations\n", activity, (*it).second.time, (*it).second.invocations);
+      s << buf_final;
     }
   }
   
   /////////////////////////// LOGS ///////////////////////////
+  
+namespace internal {
   
   void log_inner(unsigned event, void *data)
   {
@@ -385,34 +415,51 @@ namespace ThreadInstrument {
     Log.push(LogEvent(event, reinterpret_cast<void*>(data)));
   }
   
-  void dumpLog()
-  { LogEvent l;
-    char buf[10];
-    
+  void timed_log_inner(unsigned event, void *data)
+  {
+    Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, data));
+  }
+  
+  void timed_log_inner(unsigned event, int data)
+  {
+    Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, reinterpret_cast<void*>(data)));
+  }
+
+}; // internal
+
+  void dumpLog(std::ostream& s)
+  { char buf_final[256];
+    LogEvent l;
+
     const std::map<unsigned, LogPrinter_t>::const_iterator itend = LogPrinters.end();
     
     if (LogLimit) {
       while (LogLimit < Log.unsafe_size()) {
 	unsigned how_many = Log.unsafe_size() - LogLimit;
-	std::cerr << "Removing " << how_many << " log entries\n";
+	//s << "Removing " << how_many << " log entries\n";
 	while(how_many--)
 	  Log.try_pop(l);
       } 
     }
 
-    std::cerr << "*** DUMPING ThreadInstrument LOG ***\n";
+    //s << "*** DUMPING ThreadInstrument LOG ***\n";
     while (Log.try_pop(l)) {
       const unsigned thread_num = GetThreadRawData(l.id_).id_;
+      const double when = std::chrono::duration<double>(l.when_ - StartExecutionTimePoint).count();
       const std::map<unsigned, LogPrinter_t>::const_iterator it = LogPrinters.find(l.event_id_);
-      sprintf(buf, "Th %3u ", thread_num);
-      if (it == itend) {
-	fprintf(stderr, "Th%2u %2u %p\n", thread_num, l.event_id_, l.data_);
+      std::string event_representation =
+      (it != itend) ? (*((*it).second))(l.data_) :
+                      (AllLogPrinter == nullptr) ? std::to_string(l.event_id_) + ' ' + std::to_string(reinterpret_cast<unsigned long long>(l.data_)):
+                                                   (*AllLogPrinter)(l.event_id_, l.data_);
+      if (when > 0.) {
+        sprintf(buf_final, "Th %3u %lf %s\n", thread_num, when, event_representation.c_str());
       } else {
-	const std::string tmp = (*((*it).second))(l.data_);
-	fprintf(stderr, "Th%2u %s\n", thread_num, tmp.c_str());
+        sprintf(buf_final, "Th %3u %s\n", thread_num, event_representation.c_str());
       }
+    
+      s << buf_final;
     }
-    std::cerr << "*** END ThreadInstrument LOG ***\n";
+    //s << "*** END ThreadInstrument LOG ***\n";
   }
   
   void clearLog()
@@ -430,6 +477,11 @@ namespace ThreadInstrument {
     LogPrinters[event] = printer;
   }
   
+  void registerLogPrinter(AllLogPrinter_t printer)
+  {
+    AllLogPrinter = printer;
+  }
+
   void registerInspector(void (*inspector)())
   {
     Inspector = inspector;

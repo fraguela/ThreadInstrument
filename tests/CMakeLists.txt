@@ -39,7 +39,8 @@ else( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
 endif( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
 
 # Tests based on Intel TBB
-find_library( TBB_LIBRARY tbb HINTS $ENV{HOME}/tbb/lib $ENV{HOME}/local/lib )
+find_library( TBB_LIBRARY tbb 
+  PATHS $ENV{HOME}/tbb/lib $ENV{HOME}/local/lib )
 
 mark_as_advanced( TBB_LIBRARY )
 
@@ -47,7 +48,9 @@ if( TBB_LIBRARY )
   message(STATUS "Found tbb lib: ${TBB_LIBRARY}")
   get_filename_component( TBB_LIB_DIR ${TBB_LIBRARY} DIRECTORY )
   get_filename_component( TBB_INCL_LIB_DIR ${TBB_LIB_DIR}/../include ABSOLUTE)
-  find_path(TBB_INCLUDE_DIR tbb/tbb.h HINTS $ENV{HOME}/tbb/include $ENV{HOME}/local/include ${TBB_INCL_LIB_DIR} )
+  find_path(TBB_INCLUDE_DIR tbb/tbb.h 
+    HINTS ${TBB_INCL_LIB_DIR} 
+    PATHS $ENV{HOME}/tbb/include $ENV{HOME}/local/include  )
   message(STATUS "Found tbb include dir: ${TBB_INCLUDE_DIR}")
   mark_as_advanced( TBB_INCLUDE_DIR )
 

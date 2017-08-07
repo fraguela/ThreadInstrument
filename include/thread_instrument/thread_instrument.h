@@ -45,8 +45,8 @@ namespace ThreadInstrument {
    
    Profiling is performed per thread and based on events defined by the user.
    Each event is represented by an integer and the system records information about it such as the time spent in each event and the number of times it has taken place based on invocations of the user to the functions:
-   - begin_activity(int activity), which records the beginnig of an activity.
-   - end_activity(int activity), which indicates the thread has finished the activity specified.
+   - beginActivity(int activity), which records the beginnig of an activity.
+   - endActivity(int activity), which indicates the thread has finished the activity specified.
    
    At any point during the program the user can request the information on the events recorded,
    which is provided by means of a ::Int2EventDataMap_t object that associates
@@ -81,7 +81,8 @@ namespace ThreadInstrument {
     - specific functions of type ::LogPrinter_t to print the data associated to a given \c event type. They are registered by the function registerLogPrinter(unsigned event, LogPrinter_t printer).
    
    Finally, the log system allows to run an arbitrary function when the process receives a \c SIGUSR1 signal.
-   This function is registered by means of registerInspector().
+   This function is registered by means of registerInspector() and it is responsible for doing whatever the
+   user wants with the log.
    */
 
   /// Clock used for profiling
@@ -142,14 +143,14 @@ namespace ThreadInstrument {
   void printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names = 0, std::ostream& s = std::cout);
 
   /// Records the beginning of an \c activity
-  inline void begin_activity(int activity) {
+  inline void beginActivity(int activity) {
 #ifdef THREAD_INSTRUMENT
     internal::begin_activity_inner(activity);
 #endif
   }
   
   /// Records the end of an \c activity
-  inline void end_activity(int activity) {
+  inline void endActivity(int activity) {
 #ifdef THREAD_INSTRUMENT
     internal::end_activity_inner(activity);
 #endif

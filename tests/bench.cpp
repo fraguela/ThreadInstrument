@@ -27,15 +27,15 @@ void f(unsigned level)
 {
   if (!level) {
     for(unsigned i = 0; i < NReps; i++) {
-      ThreadInstrument::begin_activity(0);
+      ThreadInstrument::beginActivity(0);
       f(1);
-      ThreadInstrument::end_activity(0);
+      ThreadInstrument::endActivity(0);
     }
   } else {
     if (level < NActivities) {
-      ThreadInstrument::begin_activity(level);
+      ThreadInstrument::beginActivity(level);
       f(level + 1);
-      ThreadInstrument::end_activity(level);
+      ThreadInstrument::endActivity(level);
     }
   }
 }

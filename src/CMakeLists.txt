@@ -11,9 +11,11 @@ cmake_minimum_required( VERSION 2.8 )
 add_library( thread_instrument STATIC thread_instrument.cpp )
 target_include_directories( thread_instrument PUBLIC ${PROJECT_SOURCE_DIR}/include )
 
+add_executable( pictureTime pictureTime.cpp)
+
 #install
 
-install( TARGETS thread_instrument
+install( TARGETS thread_instrument pictureTime
          RUNTIME DESTINATION bin
          LIBRARY DESTINATION lib
          ARCHIVE DESTINATION lib )

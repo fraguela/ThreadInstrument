@@ -286,9 +286,13 @@ namespace {
   { 
     //fprintf(stderr, "Signal %d catched by ThreadInstrument\n", signal);
     
-    ThreadInstrument::dumpLog();
-    if(Inspector)
+    
+    if(Inspector) {
+      // It is the inspector's job to dump the data if it wishes
       (*Inspector)();
+    } else {
+      ThreadInstrument::dumpLog();
+    }
   }
   
 

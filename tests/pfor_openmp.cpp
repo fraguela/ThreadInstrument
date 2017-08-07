@@ -50,26 +50,26 @@ struct ParallelStuff {
 #pragma omp atomic
     ntb++;
     
-    ThreadInstrument::begin_activity(SPRINTF_ACT);
+    ThreadInstrument::beginActivity(SPRINTF_ACT);
     sprintf(buf, " [%d, %d) for thread %u\n", begin, end, ThreadInstrument::getMyThreadNumber());
-    ThreadInstrument::end_activity(SPRINTF_ACT);
+    ThreadInstrument::endActivity(SPRINTF_ACT);
     
-    ThreadInstrument::begin_activity(PARAL_ACT);
+    ThreadInstrument::beginActivity(PARAL_ACT);
     mx((float *)c, (float *)a, (float *)b, 150);
-    ThreadInstrument::end_activity(PARAL_ACT);
+    ThreadInstrument::endActivity(PARAL_ACT);
     
-    ThreadInstrument::begin_activity(WAIT_ACT);
+    ThreadInstrument::beginActivity(WAIT_ACT);
 #pragma omp critical
   {
-    ThreadInstrument::end_activity(WAIT_ACT);
+    ThreadInstrument::endActivity(WAIT_ACT);
       
-    ThreadInstrument::begin_activity(SEQ_ACT);
+    ThreadInstrument::beginActivity(SEQ_ACT);
     mx((float *)c, (float *)a, (float *)b, 80);
-    ThreadInstrument::end_activity(SEQ_ACT);
+    ThreadInstrument::endActivity(SEQ_ACT);
       
-    ThreadInstrument::begin_activity(MISC_ACT);
+    ThreadInstrument::beginActivity(MISC_ACT);
     std::cerr << std::this_thread::get_id() << buf;
-    ThreadInstrument::end_activity(MISC_ACT);
+    ThreadInstrument::endActivity(MISC_ACT);
   }
       
     std::this_thread::yield(); //Otherwise this thread tends to make all the work
@@ -84,7 +84,7 @@ struct ParallelStuff {
 int main(int argc, char **argv)
 {
   
-  ThreadInstrument::begin_activity(RUN_ACT);
+  ThreadInstrument::beginActivity(RUN_ACT);
   
   ntb = 0;
   nte = 0;
@@ -103,7 +103,7 @@ int main(int argc, char **argv)
   }
 }
 
-  ThreadInstrument::end_activity(RUN_ACT);
+  ThreadInstrument::endActivity(RUN_ACT);
   
   std::cout << ntb << " tasks begun and " << nte << " tasks ended\n";
   std::cout << ThreadInstrument::nThreadsWithActivity() << " threads with activity\n";

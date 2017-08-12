@@ -99,7 +99,7 @@ namespace  {
   int Verbosity = 0;
   double RowDist = 2.0;
   unsigned NChars = 40;
-  double SkipMax = 0.04;
+  double SkipMax = 0.05;
   bool DoMerge = false;
 
   double Ratio;
@@ -212,6 +212,14 @@ void gatherStatistics()
   maxTime -= minTime;
 }
 
+/// @internal non thread safe
+const char *my_double_to_str(double d)
+{ static char double_prinf_buffer[16];
+  
+  sprintf(double_prinf_buffer, "%.3lf", d);
+  return double_prinf_buffer;
+}
+
 /// Processes potential gaps between consecutive activities
 ///
 /// \return length of pending space not reflected in output
@@ -222,7 +230,7 @@ double inter_activity_process(std::string& buf, double last, double begin)
   if (begin > last) {
     const double dif = (begin - last) * Ratio;
     if (dif > SkipMax) {
-      buf = std::to_string(dif) + 'Z';
+      buf = std::string(my_double_to_str(dif)) + 'Z';
     } else {
       return dif;
     }
@@ -273,6 +281,7 @@ void print_thread_activities(std::ostream &s,
   char double_prinf_buffer[16];
 
   if (!activity_vector.empty()) {
+    double grey_area = 0.;
     bool is_final_chunk;
     auto it = activity_vector.cbegin();
     const auto it_end = activity_vector.cend();
@@ -280,7 +289,7 @@ void print_thread_activities(std::ostream &s,
     double prev_skip = inter_activity_process(buffer, 0., it->begin_);
 
     do {
-      std::string inter_region;
+      std::string inter_region, buffer_entry;
 
       const auto& ac = *it;
       ++it;
@@ -302,13 +311,13 @@ void print_thread_activities(std::ostream &s,
         if (buffer.empty()) {
           buffer = "G";
         }
-        buffer += ",[[timing/d/background/.style={";
+        buffer_entry = ",[[timing/d/background/.style={";
         if (required_color.empty()) { // patterns are only applied if no colors are applied
-          buffer += "pattern=" + required_pattern;
+          buffer_entry += "pattern=" + required_pattern;
         } else {
-          buffer += "fill=" + required_color;
+          buffer_entry += "fill=" + required_color;
         }
-        buffer += "}]]";
+        buffer_entry += "}]]";
       }
       
       // print itself
@@ -317,18 +326,30 @@ void print_thread_activities(std::ostream &s,
       if (DoMerge && !is_final_chunk && inter_region.empty() && (it->activity_ == ac.activity_)) {
         is_final_chunk = merge_consecutive_activities(it, next_skip, inter_region, char_length, times_per_activity[ac.activity_], it_end);
       }
-      sprintf(double_prinf_buffer, "%.3lf%c", char_length, ActivityDescription::DefaultRepr.front());
-      buffer += double_prinf_buffer;
 
-      if (NameActivities) {
-        buffer += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
+      if ((char_length > SkipMax) || !inter_region.empty()) {
+        if (grey_area > 0.0) {
+          if (grey_area > SkipMax) {
+            buffer += std::string(my_double_to_str(grey_area)) + 'U';
+          } else {
+            char_length += grey_area; // stolen in favor of easier representation
+          }
+          grey_area = 0.;
+        }
+        buffer += buffer_entry + my_double_to_str(char_length) + ActivityDescription::DefaultRepr;
+        if (NameActivities) {
+          buffer += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
+        } else {
+          buffer += "{}";
+        }
+        if (style_applied) {
+          buffer += ',';
+        }
+        buffer += inter_region;
       } else {
-        buffer += "{}";
+        grey_area += char_length;
       }
-      if (style_applied) {
-        buffer += ',';
-      }
-      buffer += inter_region;
+      
 
       // statistics + preparation for next activity
       times_per_activity[ac.activity_] += time_spent;
@@ -390,17 +411,20 @@ void dump(std::ostream &s)
   
   s << "\\end{tikztimingtable}\n\n";
   
-  const std::string slope_string = VerticalSlope ? "timing/slope=0," : "";
 
-  if (AutoColorize) {
-    for (const auto& activity : Activities) {
-      s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={fill=" + activity.color_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+  if (AutoColorize || AutoPattern) {
+    const std::string slope_string = VerticalSlope ? "timing/slope=0," : "";
+    if (AutoColorize) {
+      for (const auto& activity : Activities) {
+        s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={fill=" + activity.color_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+      }
     }
-  }
-  if (AutoPattern) {
-    for (const auto& activity : Activities) {
-      s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={pattern=" + activity.pattern_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+    if (AutoPattern) {
+      for (const auto& activity : Activities) {
+        s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={pattern=" + activity.pattern_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+      }
     }
+    s << "\\texttiming[Z]{[[" + slope_string + "]]2U[black]0.01Z} very small tasks\n";
   }
   
   if (Verbosity) {

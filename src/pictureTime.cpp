@@ -21,6 +21,8 @@
  
  Example input file:
  Th   0 0.2  COMPUTE_MATRIX BEGIN
+ Th   0 2    COMPUTE_MATRIX END
+ Th   0 2.0  COMPUTE_MATRIX BEGIN
  Th   0 4    COMPUTE_MATRIX END
  Th   0 4.1  DISTRIB BEGIN
  Th   0 4.5  DISTRIB END
@@ -97,6 +99,9 @@ namespace  {
   int Verbosity = 0;
   double RowDist = 2.0;
   unsigned NChars = 40;
+  double SkipMax = 0.04;
+
+  double Ratio;
 }
 
 struct activity_data {
@@ -206,6 +211,99 @@ void gatherStatistics()
   maxTime -= minTime;
 }
 
+/// Processes potential gaps between consecutive activities
+///
+/// \return length of pending space not reflected in output
+/// \internal If there is gap (<tt>begin > last</tt>), it is reflected in the output
+/// buffer \c buf if the associated text is larger than \c SkipMax.
+double inter_activity_process(std::string& buf, double last, double begin)
+{
+  if (begin > last) {
+    const double dif = (begin - last) * Ratio;
+    if (dif > SkipMax) {
+      buf = std::to_string(dif) + 'Z';
+    } else {
+      return dif;
+    }
+  }
+
+  return 0.;
+}
+
+void print_thread_activities(std::ostream &s,
+                             const std::vector<activity_data>& activity_vector,
+                             double * const times_per_activity)
+{ std::string buffer;
+
+  if (!activity_vector.empty()) {
+    bool is_final_chunk;
+    auto it = activity_vector.cbegin();
+    const auto it_end = activity_vector.cend();
+
+    double prev_skip = inter_activity_process(buffer, 0., (*it).begin_);
+
+    do {
+      std::string inter_region;
+
+      const auto& ac = *it;
+      ++it;
+      is_final_chunk = (it == it_end);
+      const double next_begin = is_final_chunk ? maxTime : (*it).begin_;
+      
+      // skip to add because of potentially skipped Z region due to
+      // distance w.r.t next activity
+      double next_skip = inter_activity_process(inter_region, ac.end_, next_begin);
+      if (!is_final_chunk) {
+        next_skip = next_skip / 2.;
+      }
+
+      // style
+      const std::string& required_color = Activities[ac.activity_].color_;
+      const std::string& required_pattern = Activities[ac.activity_].pattern_;
+      const bool style_applied = !required_color.empty() || !required_pattern.empty();
+      if (style_applied) {
+        if (buffer.empty()) {
+          buffer = "G";
+        }
+        buffer += ";[[timing/d/background/.style={";
+        if (required_color.empty()) { // patterns are only applied if no colors are applied
+          buffer += "pattern=" + required_pattern;
+        } else {
+          buffer += "fill=" + required_color;
+        }
+        buffer += "}]]";
+      }
+      
+      // print itself
+      const double time_spent = ac.end_ - ac.begin_;
+      buffer += std::to_string(time_spent * Ratio + prev_skip + next_skip) + ActivityDescription::DefaultRepr;
+      if (NameActivities) {
+        buffer += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
+      } else {
+        buffer += "{}";
+      }
+      if (style_applied) {
+        buffer += ';';
+      }
+      buffer += inter_region;
+
+      // statistics + preparation for next activity
+      times_per_activity[ac.activity_] += time_spent;
+      prev_skip = next_skip;
+      
+      if (buffer.size() > 250) {
+        s << (buffer + "\n   ");
+        buffer.clear();
+      }
+      
+    } while (!is_final_chunk);
+
+  } else {
+    buffer = (std::to_string(NChars) + 'Z');
+  }
+  
+  s << buffer << "\\\\\n";
+}
 
 void dump(std::ostream &s)
 {
@@ -225,30 +323,15 @@ void dump(std::ostream &s)
 
   if (Verbosity) {
     std::fill(&(times_per_activity[0][0]), &(times_per_activity[0][0]) + (n_threads * (n_activities +1)), 0.);
-
-    s << "\n% activities:\n";
-    
-    for (unsigned i = 0; i < n_activities; ++i) {
-      s << "% " << i << ' ' << Activities[i].name_ << '\n';
-    }
-    
-    if ((Verbosity > 1) && SilencedActivities.size()) {
-      s << "% silenced:";
-      for (const auto& str : SilencedActivities) {
-        s << ' ' << str;
-      }
-    }
   }
 
   s << "\n%" << maxTime << " s. mapped\n";
   s << "\\begin{tikztimingtable}[timing/rowdist=" << RowDist << "ex]\n";
 
-  const double ratio = NChars / maxTime;
+  Ratio = NChars / maxTime;
 
   unsigned cur_thread = 0;
   for (auto it = Thr2ActivityMap.begin(); it != Thr2ActivityMap.end(); ++it) {
-    std::string tmp;
-
     if(ShowThreads) {
       s << 'T' << cur_thread;
     }
@@ -257,50 +340,8 @@ void dump(std::ostream &s)
       s << "G[[timing/slope=0]]";
     }
 
-    double last = 0.;
-    for(activity_data& ac : it->second) {
-      if (ac.begin_ > last) {
-        tmp += std::to_string((ac.begin_ - last) * ratio) + 'Z';
-      }
-      const std::string& required_color = Activities[ac.activity_].color_;
-      const std::string& required_pattern = Activities[ac.activity_].pattern_;
-      const bool style_applied = !required_color.empty() || !required_pattern.empty();
-      if (style_applied) {
-        if (tmp.empty()) {
-          tmp = "G";
-        }
-        tmp += ";[[timing/d/background/.style={";
-        if (required_color.empty()) { // patterns are only applied if no colors are applied
-          tmp += "pattern=" + required_pattern;
-        } else {
-          tmp += "fill=" + required_color;
-        }
-        tmp += "}]]";
-      }
-      const double time_spent = ac.end_ - ac.begin_;
-      tmp += std::to_string(time_spent * ratio) + ActivityDescription::DefaultRepr;
-      if (NameActivities) {
-        tmp += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
-      } else {
-        tmp += "{}";
-      }
-      if (style_applied) {
-        tmp += ';';
-      }
-      times_per_activity[cur_thread][ac.activity_] += time_spent;
-      last = ac.end_;
-      
-      if (tmp.size() > 250) {
-        s << tmp << "\n   ";
-        tmp.clear();
-      }
-      
-    }
-    
-    if (last < maxTime) {
-      tmp += std::to_string((maxTime-last) * ratio) + 'Z';
-    }
-    s << tmp << "\\\\\n";
+    print_thread_activities(s, it->second, times_per_activity[cur_thread]);
+
     cur_thread++;
   }
   
@@ -319,6 +360,19 @@ void dump(std::ostream &s)
   
   if (Verbosity) {
     
+    s << "\n% activities:\n";
+    
+    for (unsigned i = 0; i < n_activities; ++i) {
+      s << "% " << i << ' ' << Activities[i].name_ << '\n';
+    }
+    
+    if ((Verbosity > 1) && SilencedActivities.size()) {
+      s << "% silenced:";
+      for (const auto& str : SilencedActivities) {
+        s << ' ' << str;
+      }
+    }
+
     for (cur_thread = 0; cur_thread < n_threads; ++cur_thread) {
       s << "\n%";
       for (unsigned i = 0; i < n_activities; ++i) {
@@ -332,6 +386,7 @@ void dump(std::ostream &s)
         s << ' ' << val;
       }
     }
+    
   }
   
   s << "\n\\end{document}\n";
@@ -350,6 +405,7 @@ R"(pictureTime [options] <files>
 -P             automatically patterns for activities
 -p act=pattern pattern for activity
 -r dist        row distance in x (char size)
+-S skip        do not depict activities < skip x char size
 -s activity    silence activity
 -t             show thread numbers
 -V             vertical slopes
@@ -377,7 +433,7 @@ void config(int argc, char *argv[])
 #ifdef __linux__
   "+"
 #endif
-  "Cc:fl:nPp:R:s:tVv:";
+  "Cc:fl:nPp:r:S:s:tVv:";
   
   while ((i = getopt(argc, argv, srchArgs)) != -1)
     switch(i) {
@@ -409,6 +465,9 @@ void config(int argc, char *argv[])
         break;
       case 'r':
         RowDist = strtod(optarg, nullptr);
+        break;
+      case 'S':
+        SkipMax = strtod(optarg, nullptr);
         break;
       case 's':
         SilencedActivities.insert(std::string{optarg});

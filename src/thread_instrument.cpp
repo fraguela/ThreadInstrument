@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cassert>
 #include <csignal>
+#include <cstdlib>
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -116,7 +117,7 @@ namespace {
     
     size_t unsafe_size() const {
       size_t sz = 0;
-      for (Node * p = head_; p != nullptr; p = p->next_) {
+      for (Node * p = head_.load(std::memory_order_relaxed); p != nullptr; p = p->next_) {
         sz++;
       }
       return sz;
@@ -124,16 +125,16 @@ namespace {
     
     void clear() {
       Node *q;
-      for (Node * p = head_; p != nullptr;  p = q) {
+      for (Node * p = head_.load(std::memory_order_relaxed); p != nullptr;  p = q) {
         q = p->next_;
         delete p;
       }
       head_ = nullptr;
     }
 
+    /// From bottom/end of the list
     bool try_pop(T& val) {
-      Node *q;
-      Node *p = head_.load(std::memory_order_relaxed);
+      Node *q, *p = head_.load(std::memory_order_relaxed);
       
       if(p == nullptr) {
         return false;
@@ -151,6 +152,36 @@ namespace {
       } else {
         q->next_ = nullptr;
       }
+      
+      delete p;
+      
+      return true;
+    }
+    
+    void reverse() {
+      Node *p = head_.load(std::memory_order_relaxed), *pp1, *pp2;
+      if (p != nullptr) {
+        for(pp1 = p->next_; pp1 != nullptr; pp1 = pp2) {
+          pp2 = pp1->next_;
+          pp1->next_ = p;
+          p = pp1;
+        }
+        (*head_).next_ = nullptr;
+        head_ = p;
+      }
+    }
+    
+    /// From top/begin of the list
+    bool try_head_pop(T& val) {
+      Node *p = head_.load(std::memory_order_relaxed);
+      
+      if(p == nullptr) {
+        return false;
+      }
+      
+      val = p->item_;
+      
+      head_ = p->next_;
       
       delete p;
       
@@ -437,17 +468,20 @@ namespace internal {
 
     const std::map<unsigned, LogPrinter_t>::const_iterator itend = LogPrinters.end();
     
+    Log.reverse();
+
     if (LogLimit) {
-      while (LogLimit < Log.unsafe_size()) {
-	unsigned how_many = Log.unsafe_size() - LogLimit;
+      const size_t cur_size= Log.unsafe_size();
+      while (LogLimit < cur_size) {
+	unsigned how_many = cur_size - LogLimit;
 	//s << "Removing " << how_many << " log entries\n";
 	while(how_many--)
-	  Log.try_pop(l);
+	  Log.try_head_pop(l);
       } 
     }
 
     //s << "*** DUMPING ThreadInstrument LOG ***\n";
-    while (Log.try_pop(l)) {
+    while (Log.try_head_pop(l)) {
       const unsigned thread_num = GetThreadRawData(l.id_).id_;
       const double when = std::chrono::duration<double>(l.when_ - StartExecutionTimePoint).count();
       const std::map<unsigned, LogPrinter_t>::const_iterator it = LogPrinters.find(l.event_id_);
@@ -464,6 +498,16 @@ namespace internal {
       s << buf_final;
     }
     //s << "*** END ThreadInstrument LOG ***\n";
+  }
+  
+  void dumpLog(const char *filename, std::ios_base::openmode mode)
+  {
+    std::ofstream myfile(filename, mode);
+    if(!myfile.is_open()) {
+      std::cerr << "Unable to open file " << filename << '\n';
+      exit(EXIT_FAILURE);
+    }
+    dumpLog(myfile);
   }
   
   void clearLog()

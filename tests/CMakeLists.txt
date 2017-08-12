@@ -23,17 +23,44 @@ endforeach(test)
 find_package( OpenMP QUIET )
 
 if( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
+
   message(STATUS "Found OpenMP")
   if( NOT OPENMP_FOUND )
     message(STATUS " although OPENMP_FOUND is not set...")
   endif(  NOT OPENMP_FOUND )
+ 
   set( tests_openmp pfor_openmp pforlog_openmp )
+  
   foreach(test ${tests_openmp})
     add_executable( ${test} ${test}.cpp )
     target_compile_options( ${test} PUBLIC ${OpenMP_CXX_FLAGS} )
     target_link_libraries( ${test} ${OpenMP_CXX_FLAGS} )
     #set( CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_CXX_FLAGS}" )
   endforeach(test)
+ 
+  find_package( OpenBLAS QUIET 
+    PATHS $ENV{HOME}/local/lib )
+  
+  if(OpenBLAS_FOUND)
+    message(STATUS "Found OpenBLAS ")
+    set(BLAS_LIBRARIES ${OpenBLAS_LIBRARIES})
+    set(BLAS_INCLUDE_DIRS ${OpenBLAS_INCLUDE_DIRS})
+    set(BLAS_FOUND ON)
+  else(OpenBLAS_FOUND)
+    set(BLA_STATIC ON)
+    find_package(BLAS QUIET)
+  endif(OpenBLAS_FOUND)
+ 
+  if(BLAS_FOUND)
+    message(STATUS "Found BLAS -I: ${OpenBLAS_INCLUDE_DIRS} -L: ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES} ")
+    add_executable( matrix_inverse_omp matrix_inverse_omp.cpp ) 
+    target_compile_options( matrix_inverse_omp PUBLIC ${OpenMP_CXX_FLAGS} )
+    target_link_libraries( matrix_inverse_omp ${OpenMP_CXX_FLAGS} )
+    target_compile_definitions( matrix_inverse_omp PRIVATE NOSERIAL NOTEST )
+    target_include_directories( matrix_inverse_omp PRIVATE ${OpenBLAS_INCLUDE_DIRS} )
+    target_link_libraries( matrix_inverse_omp ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES} )
+  endif(BLAS_FOUND)
+
 else( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
   message(STATUS "OpenMP not found. Tests skipped...")
 endif( OPENMP_FOUND OR OpenMP_CXX_FLAGS )

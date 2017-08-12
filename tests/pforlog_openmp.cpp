@@ -49,6 +49,18 @@ std::string paral_act_printer(void *p) {
   return std::string(activity_names[PARAL_ACT]) + (p ? " END" : " BEGIN");
 }
 
+std::string seq_act_printer(void *p) {
+  return std::string(activity_names[SEQ_ACT]) + (p ? " END" : " BEGIN");
+}
+
+std::string misc_act_printer(void *p) {
+  return std::string(activity_names[MISC_ACT]) + (p ? " END" : " BEGIN");
+}
+
+std::string generic_printer(unsigned event, void *p) {
+  return "This was " + std::to_string(event) + "=" + (p ? " END" : " BEGIN");
+}
+
 //////////////////// END EVENT PRINTERS ////////////////////
 
 void myfunnyinspector()
@@ -67,9 +79,12 @@ void mx(float *c, float *a, float *b, int n)
 
 struct ParallelStuff {
   
-  bool silent_;
+  const bool silent_;
+  const bool do_nice_print_;
   
-  ParallelStuff(bool silent) : silent_(silent)
+  ParallelStuff(bool silent, bool do_nice_print) :
+  silent_(silent),
+  do_nice_print_(do_nice_print)
   {}
   
   void operator()(int begin, int end) const  {
@@ -78,27 +93,27 @@ struct ParallelStuff {
 #pragma omp atomic
     ntb++;
     
-    ThreadInstrument::log(SPRINTF_ACT, 0);
+    ThreadInstrument::log(SPRINTF_ACT, 0, do_nice_print_);
     sprintf(buf, " [%d, %d) for thread %u\n", begin, end, ThreadInstrument::getMyThreadNumber());
-    ThreadInstrument::log(SPRINTF_ACT, END_EVENT);
+    ThreadInstrument::log(SPRINTF_ACT, END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(PARAL_ACT, 0);
+    ThreadInstrument::log(PARAL_ACT, 0, do_nice_print_);
     mx((float *)c, (float *)a, (float *)b, 150);
-    ThreadInstrument::log(PARAL_ACT, END_EVENT);
+    ThreadInstrument::log(PARAL_ACT, END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(WAIT_ACT, 0);
+    ThreadInstrument::log(WAIT_ACT, 0, do_nice_print_);
 #pragma omp critical
  {
-    ThreadInstrument::log(WAIT_ACT, 101);
+    ThreadInstrument::log(WAIT_ACT, END_EVENT, do_nice_print_);
       
-    ThreadInstrument::log(SEQ_ACT, 0);
+    ThreadInstrument::log(SEQ_ACT, 0, do_nice_print_);
     mx((float *)c, (float *)a, (float *)b, 80);
-    ThreadInstrument::log(SEQ_ACT, 101);
+    ThreadInstrument::log(SEQ_ACT, 101, do_nice_print_);
       
     if(!silent_) {
-      ThreadInstrument::log(MISC_ACT, 0);
+      ThreadInstrument::log(MISC_ACT, 0, do_nice_print_);
       std::cerr << std::this_thread::get_id() << buf;
-      ThreadInstrument::log(MISC_ACT, END_EVENT);
+      ThreadInstrument::log(MISC_ACT, END_EVENT, do_nice_print_);
     }
     
  }
@@ -111,19 +126,16 @@ struct ParallelStuff {
   
 };
 
-
-int main(int argc, char **argv)
+void test1(int rangelim, bool do_nice_print, const char * const msg)
 {
-  ThreadInstrument::log(RUN_ACT, 0);
+  if (!do_nice_print) {
+    ThreadInstrument::log(RUN_ACT, 0);
+  }
   
   ntb = 0;
   nte = 0;
   
-  const int rangelim = (argc == 1) ? omp_get_max_threads() : atoi(argv[1]);
-  
-  std::cout << "Running " << rangelim << " tasks\n";
-
-  const ParallelStuff ps(false);
+  const ParallelStuff ps(false, do_nice_print);
   
 #pragma omp parallel
   {
@@ -132,18 +144,43 @@ int main(int argc, char **argv)
       ps(i, i+1);
     }
   }
-
-  ThreadInstrument::log(RUN_ACT, END_EVENT);
   
-  std::cout << ntb << " tasks begun and " << nte << " tasks ended\n";
+  if (!do_nice_print) {
+    ThreadInstrument::log(RUN_ACT, END_EVENT);
+  }
+  
+  std::cout << ntb << " tasks begun and " << nte << " tasks ended\nTest: " << msg << std::endl;
   
   ThreadInstrument::dumpLog();
-  
-  // Now we test signals + user defined event printers
+}
 
+int main(int argc, char **argv)
+{
+  const int rangelim = (argc == 1) ? omp_get_max_threads() : atoi(argv[1]);
+  
+  std::cout << "Running " << rangelim << " tasks\n";
+  
+  // Initial test without printers
+  
+  test1(rangelim, false, "without printers");
+  
+  // Test user defined generic event printer
+  
+  ThreadInstrument::registerLogPrinter(generic_printer);
+  
+  test1(rangelim, false, "user-defined generic event printer");
+  
+  // Test user defined event printers
+  
   ThreadInstrument::registerLogPrinter(SPRINTF_ACT, sprintf_act_printer);
   ThreadInstrument::registerLogPrinter(WAIT_ACT, wait_act_printer);
   ThreadInstrument::registerLogPrinter(PARAL_ACT, paral_act_printer);
+  ThreadInstrument::registerLogPrinter(SEQ_ACT, seq_act_printer);
+  ThreadInstrument::registerLogPrinter(MISC_ACT, misc_act_printer);
+  
+  test1(rangelim, true, "user defined printers per event");
+  
+  // Test signals
   
   ThreadInstrument::registerInspector(myfunnyinspector);
   
@@ -153,7 +190,7 @@ int main(int argc, char **argv)
   // 30 * 0.3 = waits ~9 seconds.
   for (int i = 0; i < 30; i++) {
 
-    const ParallelStuff ps_silent(true);
+    const ParallelStuff ps_silent(true, true);
     
 #pragma omp parallel
   {

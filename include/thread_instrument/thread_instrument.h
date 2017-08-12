@@ -14,6 +14,7 @@
 #ifndef THREAD_INSTRUMENT_H
 #define THREAD_INSTRUMENT_H
 
+#include <fstream>
 #include <chrono>
 #include <map>
 #include <string>
@@ -73,10 +74,12 @@ namespace ThreadInstrument {
    was recorded.
 
    The log is kept in memory and it can be cleared at any moment by means of clearLog().
-   The log is printed either by calling dumpLog(std::ostream& s) or by sending a signal \c SIGUSR1 to the process, the output being sent by default to std:cerr.
-   By default the whole log is printed, although logLimit(unsigned nlogs) allows to indicate that only
-   the most recent \c nlogs entries must be printed. In order to facilitate printing the information associated
-   to each event type, users can register printers that transform the events into std::string. Two kinds of printers are supported:
+   The log is printed either by 
+    - calling dumpLog(std::ostream& s) 
+    - calling dumpLog(const char *filename, std::ios_base::openmode mode)
+    - or by sending a signal \c SIGUSR1 to the process.
+
+   By default the output is sent to std::cerr, and the whole log is printed, although logLimit(unsigned nlogs) allows to indicate that only the most recent \c nlogs entries must be printed. In order to facilitate printing the information associated to each event type, users can register printers that transform the events into std::string. Two kinds of printers are supported:
     - a generic printer of type ::AllLogPrinter_t, which allows to print any event associated to the program, can be registered by means of registerLogPrinter(AllLogPrinter_t printer).
     - specific functions of type ::LogPrinter_t to print the data associated to a given \c event type. They are registered by the function registerLogPrinter(unsigned event, LogPrinter_t printer).
    
@@ -168,8 +171,11 @@ namespace ThreadInstrument {
     void timed_log_inner(unsigned event, int data);
   };
   
-  /// Dumps the log to the ostream s, clearing it in the process
+  /// Dumps the log to the ostream \c s, clearing it in the process
   void dumpLog(std::ostream& s = std::cerr);
+
+  /// Dumps the log to the file \c filename, clearing it in the process
+  void dumpLog(const char *filename, std::ios_base::openmode mode = std::ios_base::out);
 
   /// Clears the log
   void clearLog();

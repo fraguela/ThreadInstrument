@@ -289,13 +289,21 @@ void dump(std::ostream &s)
       }
       times_per_activity[cur_thread][ac.activity_] += time_spent;
       last = ac.end_;
+      
+      if (tmp.size() > 250) {
+        s << tmp << "\n   ";
+        tmp.clear();
+      }
+      
     }
+    
     if (last < maxTime) {
       tmp += std::to_string((maxTime-last) * ratio) + 'Z';
     }
     s << tmp << "\\\\\n";
     cur_thread++;
   }
+  
   s << "\\end{tikztimingtable}\n\n";
   
   if (AutoColorize) {

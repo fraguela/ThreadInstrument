@@ -127,7 +127,7 @@ struct ParallelStuff {
   
 };
 
-void test1(int rangelim, bool do_nice_print)
+void test1(int rangelim, bool do_nice_print, const char * const msg)
 { std::vector<std::thread> v;
   
   if (!do_nice_print) {
@@ -152,7 +152,7 @@ void test1(int rangelim, bool do_nice_print)
     ThreadInstrument::log(RUN_ACT, END_EVENT);
   }
 
-  std::cout << ntb << " tasks begun and " << nte << " tasks ended\n";
+  std::cout << ntb << " tasks begun and " << nte << " tasks ended\nTest: " << msg << std::endl;
   
   ThreadInstrument::dumpLog();
 }
@@ -166,13 +166,13 @@ int main(int argc, char **argv)
 
   // Initial test without printers
 
-  test1(rangelim, false);
+  test1(rangelim, false, "without printers");
   
    // Test user defined generic event printer
   
   ThreadInstrument::registerLogPrinter(generic_printer);
   
-  test1(rangelim, false);
+  test1(rangelim, false, "user-defined generic event printer");
 
   // Test user defined event printers
 
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
   ThreadInstrument::registerLogPrinter(SEQ_ACT, seq_act_printer);
   ThreadInstrument::registerLogPrinter(MISC_ACT, misc_act_printer);
   
-  test1(rangelim, true);
+  test1(rangelim, true, "user defined printers per event");
   
   // Test signals
   

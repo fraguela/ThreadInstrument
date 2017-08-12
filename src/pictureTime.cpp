@@ -100,6 +100,7 @@ namespace  {
   double RowDist = 2.0;
   unsigned NChars = 40;
   double SkipMax = 0.04;
+  bool DoMerge = false;
 
   double Ratio;
 }
@@ -230,17 +231,53 @@ double inter_activity_process(std::string& buf, double last, double begin)
   return 0.;
 }
 
+/// \pre \c it points to a valid activity mergeable with the current one and \c inter_region is empty
+/// @return whether end of the vector of activities has been reached
+bool merge_consecutive_activities(std::vector<activity_data>::const_iterator& it,
+                                  double& prev_skip,
+                                  std::string& inter_region,
+                                  double& char_length,
+                                  double& times_per_activity,
+                                  const std::vector<activity_data>::const_iterator it_end)
+{ bool is_final_chunk;
+
+  const unsigned merged_activity = it->activity_;
+
+  do {
+    const auto& ac = *it;
+    ++it;
+    is_final_chunk = (it == it_end);
+    const double next_begin = is_final_chunk ? maxTime : it->begin_;
+    
+    // skip to add because of potentially skipped Z region due to
+    // distance w.r.t next activity
+    double next_skip = inter_activity_process(inter_region, ac.end_, next_begin);
+    if (!is_final_chunk) {
+      next_skip = next_skip / 2.;
+    }
+    
+    const double time_spent = ac.end_ - ac.begin_;
+    char_length += time_spent * Ratio + prev_skip + next_skip;
+    
+    times_per_activity += time_spent;
+    prev_skip = next_skip;
+  } while (!is_final_chunk && inter_region.empty() && (it->activity_ == merged_activity));
+
+  return is_final_chunk;
+}
+
 void print_thread_activities(std::ostream &s,
                              const std::vector<activity_data>& activity_vector,
                              double * const times_per_activity)
 { std::string buffer;
+  char double_prinf_buffer[16];
 
   if (!activity_vector.empty()) {
     bool is_final_chunk;
     auto it = activity_vector.cbegin();
     const auto it_end = activity_vector.cend();
 
-    double prev_skip = inter_activity_process(buffer, 0., (*it).begin_);
+    double prev_skip = inter_activity_process(buffer, 0., it->begin_);
 
     do {
       std::string inter_region;
@@ -248,7 +285,7 @@ void print_thread_activities(std::ostream &s,
       const auto& ac = *it;
       ++it;
       is_final_chunk = (it == it_end);
-      const double next_begin = is_final_chunk ? maxTime : (*it).begin_;
+      const double next_begin = is_final_chunk ? maxTime : it->begin_;
       
       // skip to add because of potentially skipped Z region due to
       // distance w.r.t next activity
@@ -265,7 +302,7 @@ void print_thread_activities(std::ostream &s,
         if (buffer.empty()) {
           buffer = "G";
         }
-        buffer += ";[[timing/d/background/.style={";
+        buffer += ",[[timing/d/background/.style={";
         if (required_color.empty()) { // patterns are only applied if no colors are applied
           buffer += "pattern=" + required_pattern;
         } else {
@@ -276,14 +313,20 @@ void print_thread_activities(std::ostream &s,
       
       // print itself
       const double time_spent = ac.end_ - ac.begin_;
-      buffer += std::to_string(time_spent * Ratio + prev_skip + next_skip) + ActivityDescription::DefaultRepr;
+      double char_length = time_spent * Ratio + prev_skip + next_skip;
+      if (DoMerge && !is_final_chunk && inter_region.empty() && (it->activity_ == ac.activity_)) {
+        is_final_chunk = merge_consecutive_activities(it, next_skip, inter_region, char_length, times_per_activity[ac.activity_], it_end);
+      }
+      sprintf(double_prinf_buffer, "%.3lf%c", char_length, ActivityDescription::DefaultRepr.front());
+      buffer += double_prinf_buffer;
+
       if (NameActivities) {
         buffer += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
       } else {
         buffer += "{}";
       }
       if (style_applied) {
-        buffer += ';';
+        buffer += ',';
       }
       buffer += inter_region;
 
@@ -347,14 +390,16 @@ void dump(std::ostream &s)
   
   s << "\\end{tikztimingtable}\n\n";
   
+  const std::string slope_string = VerticalSlope ? "timing/slope=0," : "";
+
   if (AutoColorize) {
     for (const auto& activity : Activities) {
-      s << "\\texttiming[Z]{[[timing/d/background/.style={fill=" + activity.color_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+      s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={fill=" + activity.color_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
     }
   }
   if (AutoPattern) {
     for (const auto& activity : Activities) {
-      s << "\\texttiming[Z]{[[timing/d/background/.style={pattern=" + activity.pattern_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
+      s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={pattern=" + activity.pattern_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
     }
   }
   
@@ -401,6 +446,7 @@ R"(pictureTime [options] <files>
 -c act=color   color for activity
 -f             fill activities
 -l length      length in x (char size)
+-m             merge consecutive activities of same kind
 -n             name activities in graph
 -P             automatically patterns for activities
 -p act=pattern pattern for activity
@@ -433,7 +479,7 @@ void config(int argc, char *argv[])
 #ifdef __linux__
   "+"
 #endif
-  "Cc:fl:nPp:r:S:s:tVv:";
+  "Cc:fl:mnPp:r:S:s:tVv:";
   
   while ((i = getopt(argc, argv, srchArgs)) != -1)
     switch(i) {
@@ -450,6 +496,9 @@ void config(int argc, char *argv[])
         break;
       case 'l':
         NChars = (unsigned)strtoul(optarg, (char **)NULL, 10);
+        break;
+      case 'm':
+        DoMerge = true;
         break;
       case 'n':
         NameActivities = true;

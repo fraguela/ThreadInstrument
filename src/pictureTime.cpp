@@ -46,6 +46,8 @@
  Th   0 7.5  PRINT_RESULTS END
  */
 
+enum class MergingPolicy_t {Basic, Advanced, Full};
+
 namespace  {
 
   const int MXBUF = 256;
@@ -101,7 +103,10 @@ namespace  {
   unsigned NChars = 40;
   double SkipMax = 0.05;
   bool DoMerge = false;
-
+  bool UseGreyAreas = false;
+  bool NoSlopes = false;
+  bool LightLines = false;
+  
   double Ratio;
 }
 
@@ -129,6 +134,45 @@ struct ActivityDescription {
   ActivityDescription(const std::string& name);
 };
 
+class MergingBuffer {
+
+  std::ostream &s_;
+  std::string buffer_;
+  int         cached_activity;
+  double      cached_char_length;
+  std::string cached_string;
+
+  void buf_size_check();
+
+public:
+  
+  static MergingPolicy_t MergingPolicy;
+
+  MergingBuffer(std::ostream &s) :
+  s_(s), cached_activity(-1)
+  {}
+  
+  std::string& internalBuffer() { return buffer_; }
+
+  bool empty() const { return cached_activity < 0; }
+
+  void cached_push_to_buffer(const unsigned activity, const double char_length, const std::string& inter_region = {});
+  
+  void flush();
+  
+  void print(const std::string& str) {
+    flush();
+    buffer_ += str;
+    buf_size_check();
+  }
+
+  ~MergingBuffer() {
+    flush();
+    s_ << buffer_;
+  }
+
+};
+
 typedef std::map< unsigned, std::vector<activity_data>> Thr2ActivityMap_t;
 
 Thr2ActivityMap_t Thr2ActivityMap;
@@ -137,6 +181,8 @@ std::vector<unsigned> NThreadsPerFile;
 std::set<std::string> SilencedActivities;
 
 std::string ActivityDescription::DefaultRepr = "D";
+MergingPolicy_t MergingBuffer::MergingPolicy = MergingPolicy_t::Advanced;
+
 
 ActivityDescription::ActivityDescription(const std::string& name) :
 name_(name),
@@ -220,6 +266,23 @@ const char *my_double_to_str(double d)
   return double_prinf_buffer;
 }
 
+/// Build string representing activity without format
+std::string basic_activity_string(const unsigned activity, const double char_length)
+{
+  std::string ret(my_double_to_str(char_length));
+  ret += ActivityDescription::DefaultRepr;
+  
+  if (NameActivities) {
+    ret += '{' + escapeLatex(Activities[activity].name_) + '}';
+  } else {
+    if (!NoSlopes) {
+      ret += "{}";
+    }
+  }
+
+  return ret;
+}
+
 /// Processes potential gaps between consecutive activities
 ///
 /// \return length of pending space not reflected in output
@@ -239,46 +302,150 @@ double inter_activity_process(std::string& buf, double last, double begin)
   return 0.;
 }
 
+std::string get_style(const unsigned activity, std::string& buffer)
+{ std::string style;
+  
+  const std::string& required_color = Activities[activity].color_;
+  const std::string& required_pattern = Activities[activity].pattern_;
+  const bool style_applied = !required_color.empty() || !required_pattern.empty();
+  if (style_applied) {
+    if (buffer.empty()) {
+      buffer = "G";
+    }
+    style = ",[[timing/d/background/.style={";
+    if (required_color.empty()) { // patterns are only applied if no colors are applied
+      style += "pattern=" + required_pattern;
+    } else {
+      style += "fill=" + required_color;
+    }
+    style += "}]]";
+  }
+  return style;
+}
+
+bool basic_activity_process(std::vector<activity_data>::const_iterator& it,
+                            double& prev_skip,
+                            std::string& inter_region,
+                            double& char_length,
+                            double  * const times_per_activity,
+                            const std::vector<activity_data>::const_iterator it_end)
+{
+  const activity_data& ac = *it;
+  ++it;
+  bool is_final_chunk = (it == it_end);
+  const double next_begin = is_final_chunk ? maxTime : it->begin_;
+  
+  // skip to add because of potentially skipped Z region due to
+  // distance w.r.t next activity
+  double next_skip = inter_activity_process(inter_region, ac.end_, next_begin);
+  if (!is_final_chunk) {
+    next_skip = next_skip / 2.;
+  }
+  
+  const double time_spent = ac.end_ - ac.begin_;
+  char_length = time_spent * Ratio + prev_skip + next_skip;
+  
+  times_per_activity[ac.activity_] += time_spent;
+  prev_skip = next_skip;
+  
+  return is_final_chunk;
+}
+
 /// \pre \c it points to a valid activity mergeable with the current one and \c inter_region is empty
 /// @return whether end of the vector of activities has been reached
 bool merge_consecutive_activities(std::vector<activity_data>::const_iterator& it,
                                   double& prev_skip,
                                   std::string& inter_region,
                                   double& char_length,
-                                  double& times_per_activity,
+                                  double * const times_per_activity,
                                   const std::vector<activity_data>::const_iterator it_end)
 { bool is_final_chunk;
+  double tmp_char_length;
 
   const unsigned merged_activity = it->activity_;
 
   do {
-    const auto& ac = *it;
-    ++it;
-    is_final_chunk = (it == it_end);
-    const double next_begin = is_final_chunk ? maxTime : it->begin_;
-    
-    // skip to add because of potentially skipped Z region due to
-    // distance w.r.t next activity
-    double next_skip = inter_activity_process(inter_region, ac.end_, next_begin);
-    if (!is_final_chunk) {
-      next_skip = next_skip / 2.;
-    }
-    
-    const double time_spent = ac.end_ - ac.begin_;
-    char_length += time_spent * Ratio + prev_skip + next_skip;
-    
-    times_per_activity += time_spent;
-    prev_skip = next_skip;
+    is_final_chunk = basic_activity_process(it, prev_skip, inter_region, tmp_char_length, times_per_activity, it_end);
+    char_length += tmp_char_length;
   } while (!is_final_chunk && inter_region.empty() && (it->activity_ == merged_activity));
 
   return is_final_chunk;
 }
 
+void MergingBuffer::buf_size_check()
+{
+  if (buffer_.size() > 250) {
+    s_ << buffer_ << "\n   ";
+    buffer_.clear();
+  }
+}
+
+void MergingBuffer::flush()
+{
+  if(!empty()) {
+
+    // style
+    const std::string style(get_style(cached_activity, buffer_));
+    buffer_ += style;
+    
+    if (MergingPolicy != MergingPolicy_t::Advanced) {
+      buffer_ += basic_activity_string(cached_activity, cached_char_length);
+    } else {
+      buffer_ += cached_string;
+    }
+
+    if (!style.empty()) {
+      buffer_ += ',';
+    }
+    
+    buf_size_check();
+
+    cached_activity = -1; //empty
+  }
+}
+
+void MergingBuffer::cached_push_to_buffer(const unsigned activity, const double char_length, const std::string& inter_region)
+{
+  switch (MergingPolicy) {
+    case MergingPolicy_t::Basic:
+      cached_activity = activity;
+      cached_char_length = char_length;
+      flush();
+      break;
+    case MergingPolicy_t::Full:
+      if(cached_activity == activity) {
+        cached_char_length += char_length;
+      } else {
+        flush();
+        cached_activity = activity;
+        cached_char_length = char_length;
+      }
+      break;
+    case MergingPolicy_t::Advanced:
+    {
+      const std::string str(basic_activity_string(activity, char_length));
+      if(cached_activity == activity) {
+        cached_string += str;
+      } else {
+        flush();
+        cached_activity = activity;
+        cached_string = str;
+      }
+    }
+      break;
+    default:
+      break;
+  }
+
+  if (!inter_region.empty()) {
+    print(inter_region);
+  }
+}
+
 void print_thread_activities(std::ostream &s,
                              const std::vector<activity_data>& activity_vector,
                              double * const times_per_activity)
-{ std::string buffer;
-  char double_prinf_buffer[16];
+{ MergingBuffer buffer(s);
 
   if (!activity_vector.empty()) {
     double grey_area = 0.;
@@ -286,90 +453,49 @@ void print_thread_activities(std::ostream &s,
     auto it = activity_vector.cbegin();
     const auto it_end = activity_vector.cend();
 
-    double prev_skip = inter_activity_process(buffer, 0., it->begin_);
+    double prev_skip = inter_activity_process(buffer.internalBuffer(), 0., it->begin_);
 
     do {
-      std::string inter_region, buffer_entry;
+      double char_length;
+      std::string inter_region;
 
-      const auto& ac = *it;
-      ++it;
-      is_final_chunk = (it == it_end);
-      const double next_begin = is_final_chunk ? maxTime : it->begin_;
-      
-      // skip to add because of potentially skipped Z region due to
-      // distance w.r.t next activity
-      double next_skip = inter_activity_process(inter_region, ac.end_, next_begin);
-      if (!is_final_chunk) {
-        next_skip = next_skip / 2.;
-      }
+      const unsigned activity = it->activity_;
 
-      // style
-      const std::string& required_color = Activities[ac.activity_].color_;
-      const std::string& required_pattern = Activities[ac.activity_].pattern_;
-      const bool style_applied = !required_color.empty() || !required_pattern.empty();
-      if (style_applied) {
-        if (buffer.empty()) {
-          buffer = "G";
-        }
-        buffer_entry = ",[[timing/d/background/.style={";
-        if (required_color.empty()) { // patterns are only applied if no colors are applied
-          buffer_entry += "pattern=" + required_pattern;
-        } else {
-          buffer_entry += "fill=" + required_color;
-        }
-        buffer_entry += "}]]";
-      }
-      
+      is_final_chunk = basic_activity_process(it, prev_skip, inter_region, char_length, times_per_activity, it_end);
+
       // print itself
-      const double time_spent = ac.end_ - ac.begin_;
-      double char_length = time_spent * Ratio + prev_skip + next_skip;
-      if (DoMerge && !is_final_chunk && inter_region.empty() && (it->activity_ == ac.activity_)) {
-        is_final_chunk = merge_consecutive_activities(it, next_skip, inter_region, char_length, times_per_activity[ac.activity_], it_end);
+      if (DoMerge && !is_final_chunk && inter_region.empty() && (it->activity_ == activity)) {
+        is_final_chunk = merge_consecutive_activities(it, prev_skip, inter_region, char_length, times_per_activity, it_end);
       }
 
-      if ((char_length > SkipMax) || !inter_region.empty()) {
-        if (grey_area > 0.0) {
-          if (grey_area > SkipMax) {
-            buffer += std::string(my_double_to_str(grey_area)) + 'U';
-          } else {
-            char_length += grey_area; // stolen in favor of easier representation
+      if (UseGreyAreas) {
+        if ((char_length > SkipMax) || !inter_region.empty()) {
+          if (grey_area > 0.0) {
+            if (grey_area > SkipMax) {
+              buffer.print(std::string(my_double_to_str(grey_area)) + 'U');
+            } else {
+              char_length += grey_area; // stolen in favor of easier representation
+            }
+            grey_area = 0.;
           }
-          grey_area = 0.;
-        }
-        buffer += buffer_entry + my_double_to_str(char_length) + ActivityDescription::DefaultRepr;
-        if (NameActivities) {
-          buffer += '{' + escapeLatex(Activities[ac.activity_].name_) + '}';
+          buffer.cached_push_to_buffer(activity, char_length, inter_region);
         } else {
-          buffer += "{}";
+          grey_area += char_length;
         }
-        if (style_applied) {
-          buffer += ',';
-        }
-        buffer += inter_region;
       } else {
-        grey_area += char_length;
+        buffer.cached_push_to_buffer(activity, char_length, inter_region);
       }
-      
 
-      // statistics + preparation for next activity
-      times_per_activity[ac.activity_] += time_spent;
-      prev_skip = next_skip;
-      
-      if (buffer.size() > 250) {
-        s << (buffer + "\n   ");
-        buffer.clear();
-      }
-      
     } while (!is_final_chunk);
 
   } else {
-    buffer = (std::to_string(NChars) + 'Z');
+    buffer.print(std::to_string(NChars) + 'Z');
   }
   
-  s << buffer << "\\\\\n";
+  buffer.print("G\\\\\n");
 }
 
-void dump(std::ostream &s)
+void dump(std::ostream &s, const std::string& config_str)
 {
   const unsigned n_activities = Activities.size();
   const unsigned n_threads    = Thr2ActivityMap.size();
@@ -383,7 +509,7 @@ void dump(std::ostream &s)
   if (PatternsUsed) {
     s << R"(\usetikzlibrary{patterns})" << '\n';
   }
-  s << R"(\begin{document})" << '\n';
+  s << config_str << '\n' << R"(\begin{document})" << '\n';
 
   if (Verbosity) {
     std::fill(&(times_per_activity[0][0]), &(times_per_activity[0][0]) + (n_threads * (n_activities +1)), 0.);
@@ -399,9 +525,12 @@ void dump(std::ostream &s)
     if(ShowThreads) {
       s << 'T' << cur_thread;
     }
-    s << " & ";
+    s << " & G";
+    if (LightLines) {
+      s << "[line width=0pt]";
+    }
     if (VerticalSlope) {
-      s << "G[[timing/slope=0]]";
+      s << "[[timing/slope=0]]";
     }
 
     print_thread_activities(s, it->second, times_per_activity[cur_thread]);
@@ -412,6 +541,7 @@ void dump(std::ostream &s)
   s << "\\end{tikztimingtable}\n\n";
   
 
+  // Display legend, at least when -C or -P have been used
   if (AutoColorize || AutoPattern) {
     const std::string slope_string = VerticalSlope ? "timing/slope=0," : "";
     if (AutoColorize) {
@@ -424,7 +554,9 @@ void dump(std::ostream &s)
         s << "\\texttiming[Z]{[[" + slope_string + "timing/d/background/.style={pattern=" + activity.pattern_ + "}]]2D[black]0.01Z} " + escapeLatex(activity.name_) + '\n';
       }
     }
-    s << "\\texttiming[Z]{[[" + slope_string + "]]2U[black]0.01Z} very small tasks\n";
+    if (UseGreyAreas) {
+      s << "\\texttiming[Z]{[[" + slope_string + "]]2U[black]0.01Z} very small tasks\n";
+    }
   }
   
   if (Verbosity) {
@@ -466,19 +598,23 @@ void usage()
 {
   std::cout <<
 R"(pictureTime [options] <files>
--C             automatically colorize activities
+-0             no transitions between tasks
+-C             automatic colors for activities
 -c act=color   color for activity
--f             fill activities
--l length      length in x (char size)
+-f             fill activities (all in grey)
+-g             grey areas for small consecutive tasks
+-L             light lines
+-l length      graph length in x (char size)
+-M [B|A|F]     merging policy (Basic, Advanced, Full)
 -m             merge consecutive activities of same kind
 -n             name activities in graph
--P             automatically patterns for activities
+-P             automatic patterns for activities
 -p act=pattern pattern for activity
 -r dist        row distance in x (char size)
--S skip        do not depict activities < skip x char size
+-S skip        only depict activities > skip x char size (implies -g)
 -s activity    silence activity
 -t             show thread numbers
--V             vertical slopes
+-V             vertical transitions
 -v level       verbosity level
 )";
   exit(EXIT_FAILURE);
@@ -496,17 +632,21 @@ std::pair<const char *, const char *> extractPair(char *arg)
   return std::pair<const char *, const char *>(arg, equal + 1);
 }
 
-void config(int argc, char *argv[])
+std::string config(int argc, char *argv[])
 { std::pair<const char *, const char *> charpair;
   int i;
   static const char srchArgs[] =
 #ifdef __linux__
   "+"
 #endif
-  "Cc:fl:mnPp:r:S:s:tVv:";
+  "0Cc:fgLl:M:mnPp:r:S:s:tVv:";
   
   while ((i = getopt(argc, argv, srchArgs)) != -1)
     switch(i) {
+      case '0':
+        NoSlopes = true; // Can avoid the D-D slopes, but not the D-U and U-D ones
+        VerticalSlope = true; // This helps make lighter the D-U and U-D slopes
+        break;
       case 'C':
         AutoColorize = true;
         AutoPattern = false;
@@ -518,8 +658,34 @@ void config(int argc, char *argv[])
       case 'f':
         ActivityDescription::DefaultRepr = "U";
         break;
+      case 'g':
+        UseGreyAreas = true;
+        break;
+      case 'L':
+        LightLines = true;
+        break;
       case 'l':
         NChars = (unsigned)strtoul(optarg, (char **)NULL, 10);
+        break;
+      case 'M':
+        switch (*optarg) {
+          case 'b':
+          case 'B':
+            MergingBuffer::MergingPolicy = MergingPolicy_t::Basic;
+            break;
+          case 'a':
+          case 'A':
+            MergingBuffer::MergingPolicy = MergingPolicy_t::Advanced;
+            break;
+          case 'f':
+          case 'F':
+            MergingBuffer::MergingPolicy = MergingPolicy_t::Full;
+            break;
+          default:
+            std::cerr << "Unknown option -M " << optarg << '\n';
+            exit(EXIT_FAILURE);
+            break;
+        }
         break;
       case 'm':
         DoMerge = true;
@@ -541,6 +707,7 @@ void config(int argc, char *argv[])
         break;
       case 'S':
         SkipMax = strtod(optarg, nullptr);
+        UseGreyAreas = true;
         break;
       case 's':
         SilencedActivities.insert(std::string{optarg});
@@ -562,13 +729,21 @@ void config(int argc, char *argv[])
   if(argc <= optind) {
     usage();
   }
+  
+  std::string ret("%Config: ");
+  for (int i = 1;  i < optind; i++) {
+    ret += argv[i];
+    ret += ' ';
+  }
+
+  return ret;
 }
 
 
 int main(int argc, char **argv)
 { char *p, bufin[MXBUF];
 
-  config(argc, argv);
+  const std::string config_str = config(argc, argv);
 
   if (argc < 1) {
     std::cerr << "Missing file argument";
@@ -626,8 +801,8 @@ int main(int argc, char **argv)
   }
   
   gatherStatistics();
-
-  dump(std::cout);
+  
+  dump(std::cout, config_str);
 
   return 0;
 }

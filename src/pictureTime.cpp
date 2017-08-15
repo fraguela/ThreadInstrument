@@ -106,7 +106,8 @@ namespace  {
   bool UseGreyAreas = false;
   bool NoSlopes = false;
   bool LightLines = false;
-  
+  bool GenerateTable = false;
+
   double Ratio;
 }
 
@@ -302,16 +303,16 @@ double inter_activity_process(std::string& buf, double last, double begin)
   return 0.;
 }
 
-std::string get_style(const unsigned activity, std::string& buffer)
+std::string get_style(const unsigned activity) //, std::string& buffer)
 { std::string style;
   
   const std::string& required_color = Activities[activity].color_;
   const std::string& required_pattern = Activities[activity].pattern_;
   const bool style_applied = !required_color.empty() || !required_pattern.empty();
   if (style_applied) {
-    if (buffer.empty()) {
-      buffer = "G";
-    }
+    //if (buffer.empty()) {
+    //  buffer = "G";
+    //}
     style = ",[[timing/d/background/.style={";
     if (required_color.empty()) { // patterns are only applied if no colors are applied
       style += "pattern=" + required_pattern;
@@ -385,7 +386,7 @@ void MergingBuffer::flush()
   if(!empty()) {
 
     // style
-    const std::string style(get_style(cached_activity, buffer_));
+    const std::string style(get_style(cached_activity)); //, buffer_));
     buffer_ += style;
     
     if (MergingPolicy != MergingPolicy_t::Advanced) {
@@ -492,7 +493,8 @@ void print_thread_activities(std::ostream &s,
     buffer.print(std::to_string(NChars) + 'Z');
   }
   
-  buffer.print("G\\\\\n");
+  const char * const end_ptr = GenerateTable ? "G\\\\\n" : "G};\n";
+  buffer.print(end_ptr);
 }
 
 void dump(std::ostream &s, const std::string& config_str)
@@ -516,16 +518,28 @@ void dump(std::ostream &s, const std::string& config_str)
   }
 
   s << "\n%" << maxTime << " s. mapped\n";
-  s << "\\begin{tikztimingtable}[timing/rowdist=" << RowDist << "ex]\n";
+  if (GenerateTable) {
+    s << "\\begin{tikztimingtable}[timing/rowdist=" << RowDist << "ex]\n";
+  } else {
+    s << "\\begin{tikzpicture}[font=\\sffamily]\n";
+  }
+  
 
   Ratio = NChars / maxTime;
 
   unsigned cur_thread = 0;
   for (auto it = Thr2ActivityMap.begin(); it != Thr2ActivityMap.end(); ++it) {
-    if(ShowThreads) {
-      s << 'T' << cur_thread;
+    if (GenerateTable) {
+      if(ShowThreads) {
+        s << 'T' << cur_thread;
+      }
+      s << " & G";
+    } else {
+      if(ShowThreads) {
+        s << "\\draw(0," << (RowDist * (cur_thread + 0.5)) << "ex) node {T" << cur_thread << "};\n";
+      }
+      s << "\\timing at (0.5cm," << (RowDist * cur_thread) << "ex) {G";
     }
-    s << " & G";
     if (LightLines) {
       s << "[line width=0pt]";
     }
@@ -538,7 +552,11 @@ void dump(std::ostream &s, const std::string& config_str)
     cur_thread++;
   }
   
-  s << "\\end{tikztimingtable}\n\n";
+  if (GenerateTable) {
+    s << "\\end{tikztimingtable}\n\n";
+  } else {
+    s << "\\end{tikzpicture}\n\n";
+  }
   
 
   // Display legend, at least when -C or -P have been used
@@ -613,6 +631,7 @@ R"(pictureTime [options] <files>
 -r dist        row distance in x (char size)
 -S skip        only depict activities > skip x char size (implies -g)
 -s activity    silence activity
+-T             generate table
 -t             show thread numbers
 -V             vertical transitions
 -v level       verbosity level
@@ -639,7 +658,7 @@ std::string config(int argc, char *argv[])
 #ifdef __linux__
   "+"
 #endif
-  "0Cc:fgLl:M:mnPp:r:S:s:tVv:";
+  "0Cc:fgLl:M:mnPp:r:S:s:TtVv:";
   
   while ((i = getopt(argc, argv, srchArgs)) != -1)
     switch(i) {
@@ -711,6 +730,9 @@ std::string config(int argc, char *argv[])
         break;
       case 's':
         SilencedActivities.insert(std::string{optarg});
+        break;
+      case 'T':
+        GenerateTable = true;
         break;
       case 't':
         ShowThreads = true;

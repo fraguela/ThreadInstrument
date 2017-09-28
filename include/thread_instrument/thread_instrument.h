@@ -6,7 +6,7 @@
 */
 
 ///
-/// \file     ThreadInstrument.h
+/// \file     thread_instrument.h
 /// \brief    Library header/API
 /// \author   Basilio B. Fraguela <basilio.fraguela@udc.es>
 ///
@@ -21,72 +21,6 @@
 
 /// Contains all the library API
 namespace ThreadInstrument {
-  
-  /**
-   @mainpage  ThreadInstrument
-   
-   @author   Basilio B. Fraguela <basilio.fraguela@udc.es>
-   
-   A library to help analyze applications parallelized with threads
-   
-   \tableofcontents
-   
-   @section ThreadInstrumentIntro Introduction
-   
-   ThreadInstrument offers two simple mechanisms to analyze a multithreaded program:
-   - a profiling system based on events per-thread described in \ref ProfilingDetail.
-   - a thread-safe logging utility described in \ref LoggingDetail.
-   
-   An important characteristic of the library is that its <b>activities only take place if the invocations
-   to it are compiled with the macro \c THREAD_INSTRUMENT defined.</b> If the macro is not defined, the library
-   does not make anything, having thus no overhead.
-   
-   
-   @section ProfilingDetail Profiling facility
-   
-   Profiling is performed per thread and based on events defined by the user.
-   Each event is represented by an integer and the system records information about it such as the time spent in each event and the number of times it has taken place based on invocations of the user to the functions:
-   - beginActivity(int activity), which records the beginnig of an activity.
-   - endActivity(int activity), which indicates the thread has finished the activity specified.
-   
-   At any point during the program the user can request the information on the events recorded,
-   which is provided by means of a ::Int2EventDataMap_t object that associates
-   the event numbers to objects of the class EventData that hold the information
-   associated to the event. Two functions can provide this information:
-   - getActivity(unsigned n), which returns the event data for the n-th thread.
-   - getAllActivity(), which returns a ::Int2EventDataMap_t that summarizes the data for each event across all the threads.
-   
-   Finally, the library provides three helper functions:
-   - nThreadsWithActivity() indicates how many threads have recorded some event.
-   - getMyThreadNumber() returns the thread index for the calling thread.
-   - printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names, std::ostream& s) prints the data stored in a ::Int2EventDataMap_t. The second argument is optional, and it allows to provide a string to describe each event, so that <tt>names[i]</tt> is the name of the <tt>i</tt>-th event. The third argument
-       is also optional and defaults to std::cout.
-   
-   
-   @section LoggingDetail Logging facility
-   
-   Logging is also based on events specified as integers. The library has a commong log repository
-   for all the threads so that the ordering among them is correctly kept. Entries are made invoking either log(unsigned event, int data, bool timed) or log(unsigned event, void *data, bool timed), 
-   where the \c data argument, which allows to store additional information
-   with each log entry, is optional and defaults to \c nullptr. Similarly, the \c timed argument indicates
-   whether the timing of the event should be recorded, and it defaults to \c false. When dumped, 
-   timed entries add the number of seconds since the beginning of the program until the event
-   was recorded.
-
-   The log is kept in memory and it can be cleared at any moment by means of clearLog().
-   The log is printed either by 
-    - calling dumpLog(std::ostream& s) 
-    - calling dumpLog(const char *filename, std::ios_base::openmode mode)
-    - or by sending a signal \c SIGUSR1 to the process.
-
-   By default the output is sent to std::cerr, and the whole log is printed, although logLimit(unsigned nlogs) allows to indicate that only the most recent \c nlogs entries must be printed. In order to facilitate printing the information associated to each event type, users can register printers that transform the events into std::string. Two kinds of printers are supported:
-    - a generic printer of type ::AllLogPrinter_t, which allows to print any event associated to the program, can be registered by means of registerLogPrinter(AllLogPrinter_t printer).
-    - specific functions of type ::LogPrinter_t to print the data associated to a given \c event type. They are registered by the function registerLogPrinter(unsigned event, LogPrinter_t printer).
-   
-   Finally, the log system allows to run an arbitrary function when the process receives a \c SIGUSR1 signal.
-   This function is registered by means of registerInspector() and it is responsible for doing whatever the
-   user wants with the log.
-   */
 
   /// Clock used for profiling
   using clock_t      = std::chrono::high_resolution_clock;
@@ -143,18 +77,18 @@ namespace ThreadInstrument {
     * @param names optional names of the events
     * @param s ostream for dumping the data
     */
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names = 0, std::ostream& s = std::cout);
+  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names = 0, std::ostream& s = std::cout);
 
   /// Records the beginning of an \c activity
   inline void beginActivity(int activity) {
-#ifdef THREAD_INSTRUMENT
+#ifdef THREADINSTRUMENT
     internal::begin_activity_inner(activity);
 #endif
   }
   
   /// Records the end of an \c activity
   inline void endActivity(int activity) {
-#ifdef THREAD_INSTRUMENT
+#ifdef THREADINSTRUMENT
     internal::end_activity_inner(activity);
 #endif
   }
@@ -187,27 +121,44 @@ namespace ThreadInstrument {
   using LogPrinter_t = std::string (*)(void *);
   
   /// Transform the data associated to any log entry into a std::string
-  using AllLogPrinter_t = std::string (*)(unsigned, void *);
+  using AllLogPrinter_t = std::string (*)(int, void *);
   
   /// Registers the function used to build a string that represents each event when dumpLog is invoked
-  /** @param event   log event whose printing function is defind
+  /** @param event   log event whose printing function is defined
    *  @param printer function that takes the pointer to the event data and returns a string representing it
    */
-  void registerLogPrinter(unsigned event, LogPrinter_t printer);
+  void registerLogPrinter(int event, LogPrinter_t printer);
 
+  /// Registers the function used to build a string that represents each event when dumpLog is invoked
+  /** @param event   log event whose printing function is defined
+   *  @param printer function that takes the pointer to the event data and returns a string representing it
+   */
+  void registerLogPrinter(const char *event, LogPrinter_t printer);
+  
   /// Registers a function used to build a string that represents any event when dumpLog is invoked
   /// Specific printers take precedence on this one.
   /** @param printer function that takes the event number and the pointer to the event data and returns a string representing it */
   void registerLogPrinter(AllLogPrinter_t printer);
 
+  /// Printer used by default for the logged events
+  std::string defaultPrinter(int event, void *p);
+  
+  /// A printer for logged events that generates the correct output for the pictureTime application
+  std::string pictureTimePrinter(int event, void *p);
+  
   /// Register a inspector function that will be run when a SIGUSR1 signal is received
   /** Only a single function is run, so new each new registration overwrites the previous one */
   void registerInspector(void (*inspector)());
-  
-  
+
+  /// Facility for automatically numbering in a thread-safe way events based on their names
+  int getEventNumber(const char *event);
+
+  /// Gets the name of an event number collected using ::GetEventNumber
+  const char *getEventName(int event);
+
   /// Logs an event
-  inline void log(unsigned event, void *data = nullptr, bool is_timed = false) {
-#ifdef THREAD_INSTRUMENT
+  inline void log(int event, void *data = nullptr, bool is_timed = false) {
+#ifdef THREADINSTRUMENT
     if (is_timed) {
       internal::timed_log_inner(event, data);
     } else {
@@ -217,8 +168,8 @@ namespace ThreadInstrument {
   }
   
   /// Logs an event
-  inline void log(unsigned event, int data, bool is_timed = false) {
-#ifdef THREAD_INSTRUMENT
+  inline void log(int event, int data, bool is_timed = false) {
+#ifdef THREADINSTRUMENT
     if (is_timed) {
       internal::timed_log_inner(event, data);
     } else {
@@ -226,6 +177,62 @@ namespace ThreadInstrument {
     }
 #endif
   }
+
+  /// Logs an event relying on ::GetEventNumber
+  inline void log(const char *event, void *data = nullptr, bool is_timed = false) {
+#ifdef THREADINSTRUMENT
+    log(getEventNumber(event), data, is_timed);
+#endif
+  }
+  
+  /// Logs an event relying on ::GetEventNumber
+  inline void log(const char *event, int data, bool is_timed = false) {
+#ifdef THREADINSTRUMENT
+    log(getEventNumber(event), data, is_timed);
+#endif
+  }
+
+#define THREADINSTRUMENT_COMBINE1(X,Y) X##Y
+#define THREADINSTRUMENT_COMBINE(X,Y) THREADINSTRUMENT_COMBINE1(X,Y)
+  
+#ifdef THREADINSTRUMENT
+#define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...) {                                                                \
+    static const int THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__) = ThreadInstrument::getEventNumber(STR_ID); \
+    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 0, DOTIMING);                         \
+    __VA_ARGS__;                                                                                                          \
+    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 1, DOTIMING);                         \
+  }
+#else  //THREADINSTRUMENT
+#define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...)  __VA_ARGS__
+#endif //THREADINSTRUMENT
+
+/// Log with timing the beginning and the end of the execution of the statements that follow the event name
+/** It is equivalent to <tt>log(STR_ID, 0, true); statements; log(STR_ID, 1, true);</tt> but it is more efficient
+ *  thanks to the caching of the integer code associated to the event
+ *
+ *  @param [in] STR_ID C string identifying the event
+ *  @param [in] ...       statement(s)
+ *
+ * Example Usage:
+ * @code
+ *    THREADINSTRUMENT_TIMED_LOG("Inverse", tiles[dim*n+n] = tiles[dim*n+n].inverse() );
+ * @endcode
+ */
+#define THREADINSTRUMENT_TIMED_LOG(STR_ID, ...) THREADINSTRUMENT_INTL_LOG(STR_ID,  true, __VA_ARGS__ )
+
+/// Log without timing the beginning and the end of the execution of the statements that follow the event name
+/** It is equivalent to <tt>log(STR_ID, 0, false); statements; log(STR_ID, 1, false);</tt> but it is more efficient
+ *  thanks to the caching of the integer code associated to the event
+ *
+ *  @param [in] STR_ID C string identifying the event
+ *  @param [in] ...       statement(s)
+ *
+ * Example Usage:
+ * @code
+ *    THREADINSTRUMENT_LOG("Initializing", initialize());
+ * @endcode
+*/
+#define THREADINSTRUMENT_LOG(STR_ID, ...)       THREADINSTRUMENT_INTL_LOG(STR_ID, false, __VA_ARGS__ )
 
 } //namespace ThreadInstrument
 

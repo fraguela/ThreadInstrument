@@ -24,7 +24,7 @@
 #define SEQ_ACT     4
 #define MISC_ACT    5
 
-const char *activity_names [] = { "RUN_ACT", "SPRINTF_ACT", "WAIT_ACT", "PARAL_ACT", "SEQ_ACT", "MISC_ACT" };
+const std::string activity_names [] = { "RUN_ACT", "SPRINTF_ACT", "WAIT_ACT", "PARAL_ACT", "SEQ_ACT", "MISC_ACT" };
 
 #define N 200
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
     
     const ThreadInstrument::Int2EventDataMap_t& activity = ThreadInstrument::getActivity(i);
     
-#ifdef THREAD_INSTRUMENT
+#ifdef THREADINSTRUMENT
     std::cout << "activity.size() = " << activity.size();
 #else
     assert(!activity.size());

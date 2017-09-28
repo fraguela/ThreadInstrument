@@ -264,20 +264,15 @@ public:
   tile_array inverse_omp();
 };
 
-enum Activities { INIT_COPY=0, INVERSE = 1, MULTIPLY = 2, MULT_SUBS_IN_PLACE = 3, MULT_NEGATE = 4};
-enum State      { BEGIN = 0, END = 1 };
 
-std::string generic_printer(int event, void *p)
-{
-  static const std::string activity [] = { "INIT_COPY", "INVERSE", "MULTIPLY", "MULT_SUBS_IN_PLACE", "MULT_NEGATE"};
-  return activity[event] + (p ? " END" : " BEGIN");
-}
 
 tile_array tile_array::inverse_omp()
 {
-  ThreadInstrument::log(INIT_COPY, BEGIN, true);
+  // This cannot be replaced by a THREADINSTRUMENT_TIMED_LOG because the created variable
+  //would not be known outside
+  ThreadInstrument::log("INIT_COPY", 0, true);
   tile_array b = *this;
-  ThreadInstrument::log(INIT_COPY, END, true);
+  ThreadInstrument::log("INIT_COPY", 1, true);
   
   int dim = m_dim;
   tile * const tiles = b.m_tiles;
@@ -291,9 +286,9 @@ tile_array tile_array::inverse_omp()
       
 #pragma omp task depend(inout:tiles[dim*n+n])
       {
-        ThreadInstrument::log(INVERSE, BEGIN, true);
-        tiles[dim*n+n] = tiles[dim*n+n].inverse();
-        ThreadInstrument::log(INVERSE, END, true);
+        THREADINSTRUMENT_TIMED_LOG("INVERSE",
+                                   tiles[dim*n+n] = tiles[dim*n+n].inverse();
+                                   );
       }
       
       for (int j = 0; j < dim; j++)
@@ -304,9 +299,9 @@ tile_array tile_array::inverse_omp()
         
 #pragma omp task depend(inout:tiles[dim*n+j]) depend(in:tiles[dim*n+n])
         {
-          ThreadInstrument::log(MULTIPLY, BEGIN, true);
-          tiles[dim*n+j] = tiles[dim*n+n].multiply(tiles[dim*n+j]);
-          ThreadInstrument::log(MULTIPLY, END, true);
+          THREADINSTRUMENT_TIMED_LOG("MULTIPLY",
+                                     tiles[dim*n+j] = tiles[dim*n+n].multiply(tiles[dim*n+j]);
+                                     );
         }
       }
       
@@ -325,19 +320,19 @@ tile_array tile_array::inverse_omp()
           //tile& tile_nj = b.m_tiles[dim*n+j];
 #pragma omp task depend(inout:tiles[dim*i+j]) depend(in:tiles[dim*i+n], tiles[dim*n+j])
           {
-            ThreadInstrument::log(MULT_SUBS_IN_PLACE, BEGIN, true);
-            tiles[dim*i+j].multiply_subtract_in_place(tiles[dim*i+n], tiles[dim*n+j]);
-            ThreadInstrument::log(MULT_SUBS_IN_PLACE, END, true);
+            THREADINSTRUMENT_TIMED_LOG("MULT_SUBS_IN_PLACE",
+                                       tiles[dim*i+j].multiply_subtract_in_place(tiles[dim*i+n], tiles[dim*n+j]);
+                                       );
           }
         }
         
         //tile& tile_in = b.m_tiles[dim*i+n];
 #pragma omp task depend(inout:tiles[dim*i+n]) depend(in:tiles[dim*n+n])
         {
-          ThreadInstrument::log(MULT_NEGATE, BEGIN, true);
-          tile tcopy = tiles[dim*i+n];
-          tiles[dim*i+n] = tcopy.multiply_negate(tiles[dim*n+n]);
-          ThreadInstrument::log(MULT_NEGATE, END, true);
+          THREADINSTRUMENT_TIMED_LOG("MULT_NEGATE",
+                                     tile tcopy = tiles[dim*i+n];
+                                     tiles[dim*i+n] = tcopy.multiply_negate(tiles[dim*n+n]);
+                                     );
         }
       }
       
@@ -363,7 +358,7 @@ int main(int argc, const char *argv[])
   tile_array in_array;
   int tdim = in_array.generate_matrix(tsz);
   
-  ThreadInstrument::registerLogPrinter(generic_printer);
+  ThreadInstrument::registerLogPrinter(ThreadInstrument::pictureTimePrinter);
 
   /* Should use OMP_NUM_THREADS */
  
@@ -393,6 +388,6 @@ int main(int argc, const char *argv[])
   test2.identity_check(1e-6);
 #endif
   
-  ThreadInstrument::dumpLog("matrix_inverse_omp.log");
+  ThreadInstrument::dumpLog("matrix_inverse_omp_simpl.log");
   return 0;
 }

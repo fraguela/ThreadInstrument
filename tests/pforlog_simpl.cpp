@@ -19,16 +19,7 @@
 #include <thread>
 #include "thread_instrument/thread_instrument.h"
 
-#define RUN_ACT     0
-#define SPRINTF_ACT 1
-#define WAIT_ACT    2
-#define PARAL_ACT   3
-#define SEQ_ACT     4
-#define MISC_ACT    5
-
 #define END_EVENT ((void *)0x1)
-
-const char *activity_names [] = { "RUN_ACT", "SPRINTF_ACT", "WAIT_ACT", "PARAL_ACT", "SEQ_ACT", "MISC_ACT" };
 
 #define N 300
 
@@ -39,27 +30,27 @@ float c[N][N], a[N][N], b[N][N];
 //////////////////// EVENT PRINTERS ////////////////////
 
 std::string sprintf_act_printer(void *p) {
-  return std::string(activity_names[SPRINTF_ACT]) + (p ? " END" : " BEGIN");
+  return std::string("SPRINTF_ACT") + (p ? " END" : " BEGIN");
 }
 
 std::string wait_act_printer(void *p) {
-  return std::string(activity_names[WAIT_ACT]) + (p ? " END" : " BEGIN");
+  return std::string("WAIT_ACT") + (p ? " END" : " BEGIN");
 }
 
 std::string paral_act_printer(void *p) {
-  return std::string(activity_names[PARAL_ACT]) + (p ? " END" : " BEGIN");
+  return std::string("PARAL_ACT") + (p ? " END" : " BEGIN");
 }
 
 std::string seq_act_printer(void *p) {
-  return std::string(activity_names[SEQ_ACT]) + (p ? " END" : " BEGIN");
+  return std::string("SEQ_ACT") + (p ? " END" : " BEGIN");
 }
 
 std::string misc_act_printer(void *p) {
-  return std::string(activity_names[MISC_ACT]) + (p ? " END" : " BEGIN");
+  return std::string("MISC_ACT") + (p ? " END" : " BEGIN");
 }
 
 std::string generic_printer(int event, void *p) {
-  return "This was " + std::to_string(event) + "=" + (p ? " END" : " BEGIN");
+  return "This was " + std::string(ThreadInstrument::getEventName(event)) + "=" + (p ? " END" : " BEGIN");
 }
 
 //////////////////// END EVENT PRINTERS ////////////////////
@@ -93,29 +84,29 @@ struct ParallelStuff {
     
     ntb++;
     
-    ThreadInstrument::log(SPRINTF_ACT, 0, do_nice_print_);
+    ThreadInstrument::log("SPRINTF_ACT", 0, do_nice_print_);
     sprintf(buf, " [%d, %d) for thread %u\n", begin, end, ThreadInstrument::getMyThreadNumber());
-    ThreadInstrument::log(SPRINTF_ACT, END_EVENT, do_nice_print_);
+    ThreadInstrument::log("SPRINTF_ACT", END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(PARAL_ACT, 0, do_nice_print_);
+    ThreadInstrument::log("PARAL_ACT", 0, do_nice_print_);
     mx((float *)c, (float *)a, (float *)b, 300);
-    ThreadInstrument::log(PARAL_ACT, END_EVENT, do_nice_print_);
+    ThreadInstrument::log("PARAL_ACT", END_EVENT, do_nice_print_);
     
-    ThreadInstrument::log(WAIT_ACT, 0, do_nice_print_);
+    ThreadInstrument::log("WAIT_ACT", 0, do_nice_print_);
     int should_be = 0;
     while(!my_io_lock.compare_exchange_weak(should_be, 1)) {
       should_be = 0;
     }
-    ThreadInstrument::log(WAIT_ACT, END_EVENT, do_nice_print_);
+    ThreadInstrument::log("WAIT_ACT", END_EVENT, do_nice_print_);
       
-    ThreadInstrument::log(SEQ_ACT, 0, do_nice_print_);
+    ThreadInstrument::log("SEQ_ACT", 0, do_nice_print_);
     mx((float *)c, (float *)a, (float *)b, 80);
-    ThreadInstrument::log(SEQ_ACT, END_EVENT, do_nice_print_);
+    ThreadInstrument::log("SEQ_ACT", END_EVENT, do_nice_print_);
       
     if(!silent_) {
-      ThreadInstrument::log(MISC_ACT, 0, do_nice_print_);
+      ThreadInstrument::log("MISC_ACT", 0, do_nice_print_);
       std::cerr << std::this_thread::get_id() << buf;
-      ThreadInstrument::log(MISC_ACT, END_EVENT, do_nice_print_);
+      ThreadInstrument::log("MISC_ACT", END_EVENT, do_nice_print_);
     }
     
     my_io_lock = 0;
@@ -131,7 +122,7 @@ void test1(int rangelim, bool do_nice_print, const char * const msg)
 { std::vector<std::thread> v;
   
   if (!do_nice_print) {
-    ThreadInstrument::log(RUN_ACT, 0);
+    ThreadInstrument::log("RUN_ACT", 0);
   }
   
   my_io_lock = 0;
@@ -149,7 +140,7 @@ void test1(int rangelim, bool do_nice_print, const char * const msg)
   }
   
   if (!do_nice_print) {
-    ThreadInstrument::log(RUN_ACT, END_EVENT);
+    ThreadInstrument::log("RUN_ACT", END_EVENT);
   }
 
   std::cout << ntb << " tasks begun and " << nte << " tasks ended\nTest: " << msg << std::endl;
@@ -176,11 +167,11 @@ int main(int argc, char **argv)
 
   // Test user defined event printers
 
-  ThreadInstrument::registerLogPrinter(SPRINTF_ACT, sprintf_act_printer);
-  ThreadInstrument::registerLogPrinter(WAIT_ACT, wait_act_printer);
-  ThreadInstrument::registerLogPrinter(PARAL_ACT, paral_act_printer);
-  ThreadInstrument::registerLogPrinter(SEQ_ACT, seq_act_printer);
-  ThreadInstrument::registerLogPrinter(MISC_ACT, misc_act_printer);
+  ThreadInstrument::registerLogPrinter("SPRINTF_ACT", sprintf_act_printer);
+  ThreadInstrument::registerLogPrinter("WAIT_ACT", wait_act_printer);
+  ThreadInstrument::registerLogPrinter("PARAL_ACT", paral_act_printer);
+  ThreadInstrument::registerLogPrinter("SEQ_ACT", seq_act_printer);
+  ThreadInstrument::registerLogPrinter("MISC_ACT", misc_act_printer);
   
   test1(rangelim, true, "user defined printers per event");
   

@@ -9,11 +9,11 @@
 cmake_minimum_required( VERSION 2.8 )
 
 include_directories( ${PROJECT_SOURCE_DIR}/include )
-add_definitions( -DTHREAD_INSTRUMENT )
+add_definitions( -DTHREADINSTRUMENT )
 link_libraries( thread_instrument )
 
 # Tests based on C++11 threads
-set(tests pfor pforlog bench )
+set(tests pfor pforlog pforlog_simpl bench )
 
 foreach(test ${tests})
   add_executable( ${test} ${test}.cpp )
@@ -53,12 +53,15 @@ if( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
  
   if(BLAS_FOUND)
     message(STATUS "Found BLAS -I: ${OpenBLAS_INCLUDE_DIRS} -L: ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES} ")
-    add_executable( matrix_inverse_omp matrix_inverse_omp.cpp ) 
-    target_compile_options( matrix_inverse_omp PUBLIC ${OpenMP_CXX_FLAGS} )
-    target_link_libraries( matrix_inverse_omp ${OpenMP_CXX_FLAGS} )
-    target_compile_definitions( matrix_inverse_omp PRIVATE NOSERIAL NOTEST )
-    target_include_directories( matrix_inverse_omp PRIVATE ${OpenBLAS_INCLUDE_DIRS} )
-    target_link_libraries( matrix_inverse_omp ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES} )
+    set( tests_openmp_blas matrix_inverse_omp matrix_inverse_omp_simpl )
+    foreach(test ${tests_openmp_blas})
+      add_executable( ${test} ${test}.cpp ) 
+      target_compile_options( ${test} PUBLIC ${OpenMP_CXX_FLAGS} )
+      target_link_libraries( ${test} ${OpenMP_CXX_FLAGS} )
+      target_compile_definitions( ${test} PRIVATE NOSERIAL NOTEST )
+      target_include_directories( ${test} PRIVATE ${OpenBLAS_INCLUDE_DIRS} )
+      target_link_libraries( ${test} ${BLAS_LINKER_FLAGS} ${BLAS_LIBRARIES} )
+    endforeach(test)
   endif(BLAS_FOUND)
 
 else( OPENMP_FOUND OR OpenMP_CXX_FLAGS )
@@ -81,6 +84,12 @@ if( TBB_LIBRARY )
   message(STATUS "Found tbb include dir: ${TBB_INCLUDE_DIR}")
   mark_as_advanced( TBB_INCLUDE_DIR )
 
+  if(${APPLE})
+    #The reason is that in OSX El Capitan (10.11) we need cmake -E env
+    cmake_minimum_required( VERSION 3.1.3 )
+    set( CMAKE_MACOSX_RPATH ON )
+  endif(${APPLE})
+
   set( tests_tbb pfor_tbb pforlog_tbb )
   foreach(test ${tests_tbb})
     add_executable( ${test} ${test}.cpp )
@@ -98,7 +107,7 @@ add_custom_target(check)
 foreach(test ${tests})
   add_custom_command(TARGET check PRE_BUILD
                      COMMAND ${CMAKE_COMMAND} -E echo test ${test} : -------------
-                     COMMAND ${test} || exit 1
+                     COMMAND ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=$ENV{LIBRARY_PATH}:$ENV{LD_LIBRARY_PATH} ${test} || exit 1
                      COMMAND ${CMAKE_COMMAND} -E echo ------------------------
                     )
 endforeach(test)

@@ -60,7 +60,7 @@ std::string misc_act_printer(void *p) {
   return std::string(activity_names[MISC_ACT]) + (p ? " END" : " BEGIN");
 }
 
-std::string generic_printer(unsigned event, void *p) {
+std::string generic_printer(int event, void *p) {
   return "This was " + std::to_string(event) + "=" + (p ? " END" : " BEGIN");
 }
 

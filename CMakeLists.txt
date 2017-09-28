@@ -19,8 +19,9 @@ find_package(Doxygen)
 if(DOXYGEN_FOUND)
   
   set(DOXY_DEPS
-    ${PROJECT_SOURCE_DIR}/src/thread_instrument.cpp
+    ${PROJECT_SOURCE_DIR}/doc/DoxygenMainpage.h
     ${PROJECT_SOURCE_DIR}/include/thread_instrument/thread_instrument.h
+    ${PROJECT_SOURCE_DIR}/src/thread_instrument.cpp
   )
   
   add_custom_command( OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/doc/html/index.html

@@ -6,7 +6,7 @@
 */
 
 ///
-/// \file     ThreadInstrument.cpp
+/// \file     thread_instrument.cpp
 /// \brief    Library implementation
 /// \author   Basilio B. Fraguela <basilio.fraguela@udc.es>
 ///
@@ -15,10 +15,10 @@
 #include <cassert>
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <thread>
 #include <atomic>
-#include <unordered_map>
 #include "thread_instrument/thread_instrument.h"
 
 namespace {
@@ -36,6 +36,53 @@ namespace {
 
   /// Number of threads that have registered profiling activity
   std::atomic<unsigned> NProfiledThreads {0};
+
+  struct AccessControl_t {
+    
+    std::atomic<int> readers_;
+    std::atomic<bool> writer_;
+    
+    AccessControl_t() noexcept
+    //: readers_(ATOMIC_VAR_INIT(0)),
+    //  writer_(ATOMIC_VAR_INIT(false)) //Raises warning: braces around scalar initializer
+    {
+      readers_ = ATOMIC_VAR_INIT(0);
+      writer_ = ATOMIC_VAR_INIT(false);
+    }
+    
+    ~AccessControl_t()
+    {
+      assert(readers_ == 0);
+      assert(!writer_);
+    }
+    
+    void reader_enter() noexcept {
+      do {
+        readers_++;
+        
+        if (writer_) {
+          readers_--;
+          while (writer_); // spin
+        } else {
+          break;
+        }
+      } while (1);
+    }
+    
+    void reader_exit() noexcept {
+      readers_--;
+    }
+    
+    void writer_enter() noexcept {
+      while (writer_.exchange(true)); // spin
+      while (readers_); // spin
+    }
+    
+    void writer_exit() noexcept {
+      writer_ = false;
+    }
+    
+  };
 
   template<typename T>
   class ConcurrentSList {
@@ -199,16 +246,12 @@ namespace {
     using value_type = typename std::pair<Key, Val>;
     
     ConcurrentSList<value_type> storage_;
-    
-    std::atomic_flag lock_;
-    
+
   public:
 
     using iterator = typename ConcurrentSList<value_type>::iterator;
 
-    ConcurrentSMap() :
-    lock_{ATOMIC_FLAG_INIT}
-    {}
+    ConcurrentSMap() = default;
     
     iterator begin() const { return storage_.begin(); }
     iterator end() const { return storage_.end(); }
@@ -309,8 +352,8 @@ namespace {
   /// User function to run when SIGUSR1 is received
   void (*Inspector)();
   
-  /// Generic printer for all events, if provided by user
-   ThreadInstrument::AllLogPrinter_t AllLogPrinter = nullptr;
+  /// Generic printer for all events
+  ThreadInstrument::AllLogPrinter_t AllLogPrinter = ThreadInstrument::defaultPrinter;
   
   /// Dumps ::Log when a SIGUSR1 is received 
   void catch_function(int signal)
@@ -336,8 +379,70 @@ namespace {
     }
   };
   
-  RunThisStatically A;
+  const RunThisStatically __A__;
   
+  /// Collects and numbers event names in a thread safe way
+  /// \internal the names are not copied, thus the object does not ownn them
+  class SafeEventCollector {
+    
+    struct ltstr {
+      bool operator()(const char* s1, const char* s2) const
+      {
+        return strcmp(s1, s2) < 0;
+      }
+    };
+    
+    AccessControl_t access_control_;  ///< Controls parallel accesses to the map
+    std::map<const char *, int, ltstr> eventNames_;
+    
+  public:
+    
+    SafeEventCollector() = default;
+    
+    int registerEvent(const char *name) noexcept
+    { int num;
+      
+      access_control_.reader_enter();
+
+      const auto it = eventNames_.find(name);
+      const bool found = (it != eventNames_.end());
+      
+      access_control_.reader_exit();
+
+      if (found) {
+        num = it->second;
+      } else {
+        access_control_.writer_enter();
+        num = eventNames_.size();
+        eventNames_.insert({name, num});
+        access_control_.writer_exit();
+      }
+
+      return num;
+    }
+
+    const char *name(unsigned event) const noexcept
+    {
+      for(const auto& pairs : eventNames_) {
+        if (pairs.second == event) {
+          return pairs.first;
+        }
+      }
+      
+      return nullptr;
+    }
+
+  };
+  
+  SafeEventCollector& TheSafeEventCollector()
+  { static SafeEventCollector SEC;
+    
+    return SEC;
+  }
+  
+  // Used by the event printers provided
+  static const std::string C_Event_Str("Event");
+
 } // anonymous namespace
 
 namespace ThreadInstrument {
@@ -422,14 +527,14 @@ namespace internal {
     }
   }
 
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const char **names, std::ostream& s)
+  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s)
   { char buf_final[256];
 
     Int2EventDataMap_t::const_iterator itend = m.end();
     for(Int2EventDataMap_t::const_iterator it = m.begin(); it != itend; ++it) {
       int activity = (*it).first;
-      if((names != 0) && (names[activity] != 0))
-	sprintf(buf_final, "Event %16s : %lf seconds %u invocations\n", names[activity], (*it).second.time, (*it).second.invocations);
+      if((names != 0) && (!names[activity].empty()))
+	sprintf(buf_final, "Event %16s : %lf seconds %u invocations\n", names[activity].c_str(), (*it).second.time, (*it).second.invocations);
       else
 	sprintf(buf_final, "Event %u : %lf seconds %u invocations\n", activity, (*it).second.time, (*it).second.invocations);
       s << buf_final;
@@ -485,10 +590,8 @@ namespace internal {
       const unsigned thread_num = GetThreadRawData(l.id_).id_;
       const double when = std::chrono::duration<double>(l.when_ - StartExecutionTimePoint).count();
       const std::map<unsigned, LogPrinter_t>::const_iterator it = LogPrinters.find(l.event_id_);
-      std::string event_representation =
-      (it != itend) ? (*((*it).second))(l.data_) :
-                      (AllLogPrinter == nullptr) ? std::to_string(l.event_id_) + ' ' + std::to_string(reinterpret_cast<unsigned long long>(l.data_)):
-                                                   (*AllLogPrinter)(l.event_id_, l.data_);
+      std::string event_representation = (it != itend) ? (*((*it).second))(l.data_) : (*AllLogPrinter)(l.event_id_, l.data_);
+
       if (when > 0.) {
         sprintf(buf_final, "Th %3u %lf %s\n", thread_num, when, event_representation.c_str());
       } else {
@@ -520,19 +623,59 @@ namespace internal {
     LogLimit = nlogs;
   }
   
-  void registerLogPrinter(unsigned event, LogPrinter_t printer)
+  void registerLogPrinter(int event, LogPrinter_t printer)
   {
-    LogPrinters[event] = printer;
+    if (printer == nullptr) {
+      LogPrinters.erase(event);
+    } else {
+      LogPrinters[event] = printer;
+    }
+  }
+  
+  void registerLogPrinter(const char *event, LogPrinter_t printer)
+  {
+    registerLogPrinter(getEventNumber(event), printer);
   }
   
   void registerLogPrinter(AllLogPrinter_t printer)
   {
-    AllLogPrinter = printer;
+    AllLogPrinter = (printer == nullptr) ? defaultPrinter : printer;
+
+    assert(AllLogPrinter != nullptr);
   }
 
+  std::string pictureTimePrinter(int event, void *p)
+  { static const std::string labels[] = { " BEGIN", " END" };
+
+    const std::string& label = labels[(p == nullptr) ? 0 : 1];
+
+    const char * const event_name = getEventName(event);
+
+    return (event_name == nullptr) ? (C_Event_Str + std::to_string(event) + label) : (event_name + label);
+  }
+
+  std::string defaultPrinter(int event, void *p)
+  {
+    const std::string label = std::to_string(reinterpret_cast<unsigned long long>(p));
+    
+    const char * const event_name = getEventName(event);
+    
+    return (event_name == nullptr) ? (C_Event_Str + std::to_string(event) + label) : (event_name + label);
+  }
+  
   void registerInspector(void (*inspector)())
   {
     Inspector = inspector;
   }
   
+  int getEventNumber(const char *event)
+  {
+    return TheSafeEventCollector().registerEvent(event);
+  }
+
+  const char *getEventName(int event)
+  {
+    return TheSafeEventCollector().name(event);
+  }
+
 } //namespace ThreadInstrument

@@ -23,8 +23,10 @@ namespace ThreadInstrument {
    
    Profiling is performed per thread and based on events defined by the user.
    Each event is represented by an integer and the system records information about it such as the time spent in each event and the number of times it has taken place based on invocations of the user to the functions:
-   - beginActivity(int activity), which records the beginnig of an activity.
-   - endActivity(int activity), which indicates the thread has finished the activity specified.
+   - beginActivity(int activity) or beginActivity(const char *activity), which records the beginnig of an activity.
+   - endActivity(int activity) or endActivity(const char *activity), which indicates the thread has finished the activity specified.
+   
+   There is also a helper macro ::THREADINSTRUMENT_PROF that allows to profile a set of statements naming the activity with a C string. This macro is also faster that using the beginActivity() and endActivity() functions based on a C string.
    
    At any point during the program the user can request the information on the events recorded,
    which is provided by means of a ::Int2EventDataMap_t object that associates
@@ -36,8 +38,7 @@ namespace ThreadInstrument {
    Finally, the library provides three helper functions:
    - nThreadsWithActivity() indicates how many threads have recorded some event.
    - getMyThreadNumber() returns the thread index for the calling thread.
-   - printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s) prints the data stored in a ::Int2EventDataMap_t. The second argument is optional, and it allows to provide a string to describe each event, so that <tt>names[i]</tt> is the name of the <tt>i</tt>-th event. The third argument
-       is also optional and defaults to std::cout.
+   - printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s) prints the data stored in a ::Int2EventDataMap_t. The second argument is optional, and it allows to provide a string to describe each event, so that <tt>names[i]</tt> is the name of the <tt>i</tt>-th event. The third argument is also optional and defaults to std::cout.
    
    
    @section LoggingDetail Logging facility
@@ -50,9 +51,11 @@ namespace ThreadInstrument {
    whether the timing of the event should be recorded, and it defaults to \c false. When dumped, 
    timed entries add the number of seconds since the beginning of the program until the event
    was recorded. There are also counterparts of these log functions in which the \c event argument can be
-   provided by means of a <tt>const char *</tt>. These versions rely on the thread-safe function getEventNumber(const char *event),
-   which associates a unique int to each different provided string. The string associated to an integer event can be retrieved
-   using getEventName(int event). It must be noted that logging based on c strings implies a somewhat larger performance penalty,
+   provided by means of a <tt>const char *</tt>. These versions, as well as the profiling functions
+   beginActivity(const char *activity) and endActivity(const char *activity) rely on the thread-safe function
+   getEventNumber(const char *event), which associates a unique int to each different provided string. 
+   The string associated to an integer event can be retrieved using getEventName(int event). It must be 
+   noted that logging based on c strings implies a somewhat larger performance penalty,
    as a map must be checked to translate the strings into integers.
 
    Often we want to log the beginning and the end of an activity. Two helper macros, ::THREADINSTRUMENT_TIMED_LOG and

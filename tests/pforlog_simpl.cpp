@@ -6,7 +6,8 @@
 */
 
 ///
-/// \file     pforlog.cpp
+/// \file     pforlog_simpl.cpp
+/// \brief    Same as pforlog.cpp but relying on the simple interface based on strings
 /// \author   Basilio B. Fraguela <basilio.fraguela@udc.es>
 ///
 

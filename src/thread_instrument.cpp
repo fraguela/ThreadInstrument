@@ -404,7 +404,7 @@ namespace {
       
       access_control_.reader_enter();
 
-      const auto it = eventNames_.find(name);
+      auto it = eventNames_.find(name);
       const bool found = (it != eventNames_.end());
       
       access_control_.reader_exit();
@@ -413,11 +413,16 @@ namespace {
         num = it->second;
       } else {
         access_control_.writer_enter();
-        num = eventNames_.size();
-        eventNames_.insert({name, num});
+        it = eventNames_.find(name); // may be the name was inserted in the meantime
+        if(it != eventNames_.end()) {
+          num = it->second;
+        } else {
+          num = eventNames_.size();
+          eventNames_.insert({name, num});
+        }
         access_control_.writer_exit();
       }
-
+      //fprintf(stderr, "%s->%d %p\n", name, num);
       return num;
     }
 
@@ -533,14 +538,25 @@ namespace internal {
     Int2EventDataMap_t::const_iterator itend = m.end();
     for(Int2EventDataMap_t::const_iterator it = m.begin(); it != itend; ++it) {
       int activity = (*it).first;
-      if((names != 0) && (!names[activity].empty()))
-	sprintf(buf_final, "Event %16s : %lf seconds %u invocations\n", names[activity].c_str(), (*it).second.time, (*it).second.invocations);
+      const char * const activity_name = ((names != nullptr) && (!names[activity].empty())) ? names[activity].c_str() : getEventName(activity);
+      if(activity_name != nullptr)
+	sprintf(buf_final, "Event %16s : %lf seconds %u invocations\n", activity_name, (*it).second.time, (*it).second.invocations);
       else
 	sprintf(buf_final, "Event %u : %lf seconds %u invocations\n", activity, (*it).second.time, (*it).second.invocations);
       s << buf_final;
     }
   }
+
+  int getEventNumber(const char *event)
+  {
+    return TheSafeEventCollector().registerEvent(event);
+  }
   
+  const char *getEventName(int event)
+  {
+    return TheSafeEventCollector().name(event);
+  }
+
   /////////////////////////// LOGS ///////////////////////////
   
 namespace internal {
@@ -666,16 +682,6 @@ namespace internal {
   void registerInspector(void (*inspector)())
   {
     Inspector = inspector;
-  }
-  
-  int getEventNumber(const char *event)
-  {
-    return TheSafeEventCollector().registerEvent(event);
-  }
-
-  const char *getEventName(int event)
-  {
-    return TheSafeEventCollector().name(event);
   }
 
 } //namespace ThreadInstrument

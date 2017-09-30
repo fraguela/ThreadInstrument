@@ -73,11 +73,20 @@ namespace ThreadInstrument {
 
   /// Print the data for the events in a ::Int2EventDataMap_t in the ostream \c s (defaults to std::cout)
   /**
+    * If \c names is not provided and the activities were registered using strings, the function will
+    *use the names provided during the logging.
+    *
     * @param m Set of events
     * @param names optional names of the events
     * @param s ostream for dumping the data
     */
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names = 0, std::ostream& s = std::cout);
+  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names = nullptr, std::ostream& s = std::cout);
+
+  /// Facility for automatically numbering in a thread-safe way events based on their names
+  int getEventNumber(const char *event);
+  
+  /// Gets the name of an event number collected using ::GetEventNumber
+  const char *getEventName(int event);
 
   /// Records the beginning of an \c activity
   inline void beginActivity(int activity) {
@@ -92,7 +101,21 @@ namespace ThreadInstrument {
     internal::end_activity_inner(activity);
 #endif
   }
- 
+
+  /// Records the beginning of an \c activity
+  inline void beginActivity(const char *activity) {
+#ifdef THREADINSTRUMENT
+    internal::begin_activity_inner(getEventNumber(activity));
+#endif
+  }
+  
+  /// Records the end of an \c activity
+  inline void endActivity(const char *activity) {
+#ifdef THREADINSTRUMENT
+    internal::end_activity_inner(getEventNumber(activity));
+#endif
+  }
+
   /////////////////////////// LOGS ///////////////////////////
   
   namespace internal {
@@ -150,12 +173,6 @@ namespace ThreadInstrument {
   /** Only a single function is run, so new each new registration overwrites the previous one */
   void registerInspector(void (*inspector)());
 
-  /// Facility for automatically numbering in a thread-safe way events based on their names
-  int getEventNumber(const char *event);
-
-  /// Gets the name of an event number collected using ::GetEventNumber
-  const char *getEventName(int event);
-
   /// Logs an event
   inline void log(int event, void *data = nullptr, bool is_timed = false) {
 #ifdef THREADINSTRUMENT
@@ -196,16 +213,42 @@ namespace ThreadInstrument {
 #define THREADINSTRUMENT_COMBINE(X,Y) THREADINSTRUMENT_COMBINE1(X,Y)
   
 #ifdef THREADINSTRUMENT
+
+#define THREADINSTRUMENT_INTL_PROF(STR_ID, ...) {                                                                         \
+    static const int THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__) = ThreadInstrument::getEventNumber(STR_ID); \
+    ThreadInstrument::beginActivity(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__));                            \
+    __VA_ARGS__;                                                                                                          \
+    ThreadInstrument::endActivity(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__));                              \
+  }
+
 #define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...) {                                                                \
     static const int THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__) = ThreadInstrument::getEventNumber(STR_ID); \
     ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 0, DOTIMING);                         \
     __VA_ARGS__;                                                                                                          \
     ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 1, DOTIMING);                         \
   }
+  
 #else  //THREADINSTRUMENT
+
+#define THREADINSTRUMENT_INTL_PROF(STR_ID, ...)           __VA_ARGS__
 #define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...)  __VA_ARGS__
+
 #endif //THREADINSTRUMENT
 
+/// Profile the execution of the statements that follow the event name
+/** It is equivalent to <tt>beginActivity(STR_ID); statements; endActivity(STR_ID);</tt> but it is more efficient
+ *  thanks to the caching of the integer code associated to the event
+ *
+ *  @param [in] STR_ID C string identifying the event
+ *  @param [in] ...       statement(s)
+ *
+ * Example Usage:
+ * @code
+ *    THREADINSTRUMENT_PROF("Initializing", initialize());
+ * @endcode
+ */
+#define THREADINSTRUMENT_PROF(STR_ID, ...)       THREADINSTRUMENT_INTL_PROF(STR_ID, __VA_ARGS__ )
+  
 /// Log with timing the beginning and the end of the execution of the statements that follow the event name
 /** It is equivalent to <tt>log(STR_ID, 0, true); statements; log(STR_ID, 1, true);</tt> but it is more efficient
  *  thanks to the caching of the integer code associated to the event

@@ -118,7 +118,7 @@ int main(int argc, char **argv)
     assert(!activity.size());
 #endif
     
-    ThreadInstrument::printInt2EventDataMap(activity, activity_names);
+    ThreadInstrument::dumpActivity(activity, activity_names);
   }
   
   return 0;

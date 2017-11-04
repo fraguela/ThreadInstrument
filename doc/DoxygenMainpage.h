@@ -38,7 +38,8 @@ namespace ThreadInstrument {
    Finally, the library provides three helper functions:
    - nThreadsWithActivity() indicates how many threads have recorded some event.
    - getMyThreadNumber() returns the thread index for the calling thread.
-   - printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s) prints the data stored in a ::Int2EventDataMap_t. The second argument is optional, and it allows to provide a string to describe each event, so that <tt>names[i]</tt> is the name of the <tt>i</tt>-th event. The third argument is also optional and defaults to std::cout.
+   - dumpActivity(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s) prints the data stored in a ::Int2EventDataMap_t. The second argument is optional, and it allows to provide a string to describe each event, so that <tt>names[i]</tt> is the name of the <tt>i</tt>-th event. The third argument is also optional and defaults to std::cout.
+   - dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& fname) does the same, but printing to the file \c fname.
    
    
    @section LoggingDetail Logging facility

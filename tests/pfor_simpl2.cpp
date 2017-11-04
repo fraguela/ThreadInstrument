@@ -114,7 +114,10 @@ int main(int argc, char **argv)
   
     std::cout << '\n';
     
-    ThreadInstrument::printInt2EventDataMap(activity);
+    ThreadInstrument::dumpActivity(activity);
+
+    // Test dump to file
+    ThreadInstrument::dumpActivity(activity, nullptr, "/tmp/pfor_simpl2_activities.txt");
   }
   
   return 0;

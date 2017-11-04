@@ -77,11 +77,22 @@ namespace ThreadInstrument {
     *use the names provided during the logging.
     *
     * @param m Set of events
-    * @param names optional names of the events
+    * @param names names of the events or nullptr
     * @param s ostream for dumping the data
     */
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names = nullptr, std::ostream& s = std::cout);
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names = nullptr, std::ostream& s = std::cout);
 
+  /// Print the data for the events in a ::Int2EventDataMap_t in the file \c fname
+  /**
+   * If \c names is nullptr and the activities were registered using strings, the function will
+   *use the names provided during the logging.
+   *
+   * @param m Set of events
+   * @param names names of the events or nullptr
+   * @param fname file for dumping the data
+   */
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& fname);
+  
   /// Facility for automatically numbering in a thread-safe way events based on their names
   int getEventNumber(const char *event);
   

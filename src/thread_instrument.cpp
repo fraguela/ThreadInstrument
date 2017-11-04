@@ -508,7 +508,7 @@ namespace internal {
   
   Int2EventDataMap_t getAllActivity()
   {
-    unsigned n = nThreadsWithActivity();
+    const unsigned n = nThreadsWithActivity();
     if(!n) return Int2EventDataMap_t();
     
     Int2EventDataMap_t m(getThreadDataByNumber(0));
@@ -532,10 +532,10 @@ namespace internal {
     }
   }
 
-  void printInt2EventDataMap(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s)
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, std::ostream& s)
   { char buf_final[256];
 
-    Int2EventDataMap_t::const_iterator itend = m.end();
+    const Int2EventDataMap_t::const_iterator itend = m.end();
     for(Int2EventDataMap_t::const_iterator it = m.begin(); it != itend; ++it) {
       int activity = (*it).first;
       const char * const activity_name = ((names != nullptr) && (!names[activity].empty())) ? names[activity].c_str() : getEventName(activity);
@@ -547,6 +547,13 @@ namespace internal {
     }
   }
 
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& fname)
+  {
+    std::ofstream outfile(fname.c_str(), std::ios_base::out | std::ios_base::app);
+    dumpActivity(m, names, outfile);
+    outfile.close();
+  }
+  
   int getEventNumber(const char *event)
   {
     return TheSafeEventCollector().registerEvent(event);

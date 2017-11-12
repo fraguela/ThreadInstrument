@@ -547,9 +547,9 @@ namespace internal {
     }
   }
 
-  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& fname)
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& filename)
   {
-    std::ofstream outfile(fname.c_str(), std::ios_base::out | std::ios_base::app);
+    std::ofstream outfile(filename.c_str(), std::ios_base::out | std::ios_base::app);
     dumpActivity(m, names, outfile);
     outfile.close();
   }
@@ -626,9 +626,9 @@ namespace internal {
     //s << "*** END ThreadInstrument LOG ***\n";
   }
   
-  void dumpLog(const char *filename, std::ios_base::openmode mode)
+  void dumpLog(const std::string& filename, std::ios_base::openmode mode)
   {
-    std::ofstream myfile(filename, mode);
+    std::ofstream myfile(filename.c_str(), mode);
     if(!myfile.is_open()) {
       std::cerr << "Unable to open file " << filename << '\n';
       exit(EXIT_FAILURE);

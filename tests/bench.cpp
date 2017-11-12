@@ -110,14 +110,18 @@ int main(int argc, char **argv)
   NActivities = (argc < 3) ? 10 : atoi(argv[2]);
   NReps       = (argc < 4) ? 1000 : atoi(argv[3]);
 
+  const size_t total_activities = size_t(NThreads) * size_t(NReps) * size_t(NActivities);
+  
   std::cout << "NThreads=" << NThreads<< " NActivities=" << NActivities << " NReps=" << NReps << '\n';
-
+  std::cout << "Each thread runs " << NReps << " iterations, each one profiling " << NActivities << " different activities\n";
+  std::cout << " => a total of " << NThreads << " * (" << NReps << " * " << NActivities << ") = " << total_activities << " activity periods are measured\n";
   double time_0 = runtest(0);
   
-  std::cout << "Profiling Time=" << time_0 << '\n';
+  std::cout << "Profiling Time=" << time_0 << "s. or " << (time_0/(total_activities / NThreads)) << "s. per activity period\n";
   std::cout << "nThreadsWithActivity()=" << ThreadInstrument::nThreadsWithActivity() << '\n';
 
 
+  // verify correctness
   for(unsigned i = 0; i < ThreadInstrument::nThreadsWithActivity(); ++i) {
 
     const ThreadInstrument::Int2EventDataMap_t& activity = ThreadInstrument::getActivity(i);
@@ -144,10 +148,11 @@ int main(int argc, char **argv)
     }
   }
   
-  std::cout << "=================\n";
-
+  std::cout << "=================\nCompare performance of profiling APIs:\n";
+  
   NReps      *= NActivities;
   NActivities = 1;
+  
   std::cout << "NThreads=" << NThreads<< " NActivities=" << NActivities << " NReps=" << NReps << '\n';
   std::cout << "Profiling Time using int   =" << runtest(0) << '\n';
   std::cout << "Profiling Time using char *=" << runtest(1) << '\n';

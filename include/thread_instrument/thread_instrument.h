@@ -82,16 +82,16 @@ namespace ThreadInstrument {
     */
   void dumpActivity(const Int2EventDataMap_t& m, const std::string *names = nullptr, std::ostream& s = std::cout);
 
-  /// Print the data for the events in a ::Int2EventDataMap_t in the file \c fname
+  /// Print the data for the events in a ::Int2EventDataMap_t in the file \c filename
   /**
    * If \c names is nullptr and the activities were registered using strings, the function will
    *use the names provided during the logging.
    *
    * @param m Set of events
    * @param names names of the events or nullptr
-   * @param fname file for dumping the data
+   * @param filename name of the file for dumping the data
    */
-  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& fname);
+  void dumpActivity(const Int2EventDataMap_t& m, const std::string *names, const std::string& filename);
   
   /// Facility for automatically numbering in a thread-safe way events based on their names
   int getEventNumber(const char *event);
@@ -143,7 +143,7 @@ namespace ThreadInstrument {
   void dumpLog(std::ostream& s = std::cerr);
 
   /// Dumps the log to the file \c filename, clearing it in the process
-  void dumpLog(const char *filename, std::ios_base::openmode mode = std::ios_base::out);
+  void dumpLog(const std::string& filename, std::ios_base::openmode mode = std::ios_base::out);
 
   /// Clears the log
   void clearLog();

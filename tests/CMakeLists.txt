@@ -17,6 +17,7 @@ set(tests pfor pfor_simpl pfor_simpl2 pforlog pforlog_simpl bench )
 
 foreach(test ${tests})
   add_executable( ${test} ${test}.cpp )
+  target_link_libraries( ${test} pthread )
 endforeach(test)
 
 #Tests based on OpenMP

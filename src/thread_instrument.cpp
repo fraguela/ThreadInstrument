@@ -1,6 +1,6 @@
 /*
  ThreadInstrument: Library to monitor thread activity
- Copyright (C) 2012-2017 Basilio B. Fraguela. Universidade da Coruna
+ Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna
  
  Distributed under the MIT License. (See accompanying file LICENSE)
 */
@@ -28,15 +28,18 @@ namespace {
     const unsigned id_;   ///< # of the thread associated
     ThreadInstrument::Int2EventDataMap_t int2EventDataMap_;
 
-    IdentifiedEventData(unsigned in_id)
+    IdentifiedEventData(unsigned in_id) noexcept
     : id_(in_id)
     {}
     
   };
 
+  
   /// Number of threads that have registered profiling activity
   std::atomic<unsigned> NProfiledThreads {0};
 
+  
+  /// Structure that supports a multiple-reader single-writer access protocol
   struct AccessControl_t {
     
     std::atomic<int> readers_;
@@ -84,6 +87,9 @@ namespace {
     
   };
 
+  
+  /// Lock-free single-linked list that only supports push at the head and pop either from the head or the bottom
+  ///plus reversals
   template<typename T>
   class ConcurrentSList {
     
@@ -94,7 +100,7 @@ namespace {
     
     std::atomic<Node*> head_;
     
-    void push(Node * const newp)
+    void push(Node * const newp) noexcept
     {
       newp->next_ = head_.load(std::memory_order_relaxed);
       
@@ -111,46 +117,46 @@ namespace {
 
     public:
       
-      iterator(Node *pos = nullptr) :
+      iterator(Node *pos = nullptr) noexcept :
       pos_(pos)
       { }
       
-      iterator(const iterator& other) :
+      iterator(const iterator& other) noexcept :
       pos_(other.pos_)
       { }
 
-      bool operator==(const iterator& other) const {
+      bool operator==(const iterator& other) const noexcept {
         return pos_ == other.pos_;
       }
 
-      bool operator!=(const iterator& other) const {
+      bool operator!=(const iterator& other) const noexcept {
         return pos_ != other.pos_;
       }
       
       /// Prefix increment
-      iterator& operator++() {
+      iterator& operator++() noexcept {
         advance();
         return *this;
       }
       
       /// Postfix increment
-      iterator operator++(int) {
+      iterator operator++(int) noexcept {
         iterator tmp(*this);
         advance();
         return tmp;
       }
       
-      T& operator*() const {
+      T& operator*() const noexcept {
         return pos_->item_;
       }
 
-      T* operator->() const {
+      T* operator->() const noexcept {
         return &(pos_->item_);
       }
 
     };
     
-    ConcurrentSList() :
+    ConcurrentSList() noexcept :
     head_{nullptr}
     { }
     
@@ -162,7 +168,7 @@ namespace {
       pusn(new Node {nullptr, val });
     }
     
-    size_t unsafe_size() const {
+    size_t unsafe_size() const noexcept {
       size_t sz = 0;
       for (Node * p = head_.load(std::memory_order_relaxed); p != nullptr; p = p->next_) {
         sz++;
@@ -170,7 +176,7 @@ namespace {
       return sz;
     }
     
-    void clear() {
+    void clear() noexcept {
       Node *q;
       for (Node * p = head_.load(std::memory_order_relaxed); p != nullptr;  p = q) {
         q = p->next_;
@@ -180,7 +186,7 @@ namespace {
     }
 
     /// From bottom/end of the list
-    bool try_pop(T& val) {
+    bool try_pop(T& val) noexcept {
       Node *q, *p = head_.load(std::memory_order_relaxed);
       
       if(p == nullptr) {
@@ -205,7 +211,7 @@ namespace {
       return true;
     }
     
-    void reverse() {
+    void reverse() noexcept {
       Node *p = head_.load(std::memory_order_relaxed), *pp1, *pp2;
       if (p != nullptr) {
         for(pp1 = p->next_; pp1 != nullptr; pp1 = pp2) {
@@ -219,7 +225,7 @@ namespace {
     }
     
     /// From top/begin of the list
-    bool try_head_pop(T& val) {
+    bool try_head_pop(T& val) noexcept {
       Node *p = head_.load(std::memory_order_relaxed);
       
       if(p == nullptr) {
@@ -235,11 +241,13 @@ namespace {
       return true;
     }
     
-    iterator begin() const { return iterator(head_); }
-    iterator end() const { return iterator(nullptr); }
+    iterator begin() const noexcept { return iterator(head_); }
+    iterator end() const noexcept { return iterator(nullptr); }
 
   };
 
+  
+  /// Poor man's map based on a ConcurrentSList
   template<typename Key, typename Val>
   class ConcurrentSMap {
 
@@ -253,10 +261,10 @@ namespace {
 
     ConcurrentSMap() = default;
     
-    iterator begin() const { return storage_.begin(); }
-    iterator end() const { return storage_.end(); }
+    iterator begin() const noexcept { return storage_.begin(); }
+    iterator end() const noexcept { return storage_.end(); }
     
-    iterator find(const Key& key) {
+    iterator find(const Key& key) noexcept {
       iterator it = begin();
       const iterator it_end = end();
       while ( (it != it_end) && ((*it).first != key) ) {
@@ -265,9 +273,9 @@ namespace {
       return it;
     }
     
-    size_t unsafe_size() const { return storage_.unsafe_size(); }
+    size_t unsafe_size() const noexcept { return storage_.unsafe_size(); }
 
-    std::pair<iterator,bool> emplace(const Key& key, Val&& val) {
+    std::pair<iterator, bool> emplace(const Key& key, Val&& val) {
       storage_.push(value_type(key, std::forward<Val>(val)));
       return {find(key), true}; // Very inefficient for the general case, but ok here
     }
@@ -303,7 +311,7 @@ namespace {
     return GetMyThreadRawData().int2EventDataMap_;
   }
   
-  ThreadInstrument::Int2EventDataMap_t& getThreadDataByNumber(int id)
+  ThreadInstrument::Int2EventDataMap_t& getThreadDataByNumber(int id) noexcept
   { Thr2Ev_t::iterator it;
 
     for (it = GlobalEventMap.begin(); it != GlobalEventMap.end(); ++it) {
@@ -331,11 +339,11 @@ namespace {
     void *data_;
     unsigned event_id_;
     
-    LogEvent(ThreadInstrument::time_point_t when, unsigned event_id, void *data)
+    LogEvent(ThreadInstrument::time_point_t when, unsigned event_id, void *data) noexcept
     : id_(std::this_thread::get_id()), when_(when), data_(data), event_id_(event_id)
     { }
     
-    LogEvent(unsigned event_id, void *data)
+    LogEvent(unsigned event_id, void *data) noexcept
     : id_(std::this_thread::get_id()), data_(data), event_id_(event_id)
     { }
     
@@ -343,10 +351,14 @@ namespace {
 
   };
   
-  unsigned LogLimit = 0;  ///< Default is no limit
+  /// Maximum number of log events to dump. By default there is no limit
+  /** @internal Notice that all the event are actually logged; but only the last LogLimit ones are dumped. */
+  unsigned LogLimit = 0;
 
+  /// Log storage
   ConcurrentSList<LogEvent> Log;
 
+  /// Provides printer for each kind of event
   std::map<unsigned, ThreadInstrument::LogPrinter_t> LogPrinters;
   
   /// User function to run when SIGUSR1 is received
@@ -359,8 +371,7 @@ namespace {
   void catch_function(int signal)
   { 
     //fprintf(stderr, "Signal %d catched by ThreadInstrument\n", signal);
-    
-    
+  
     if(Inspector) {
       // It is the inspector's job to dump the data if it wishes
       (*Inspector)();
@@ -369,7 +380,7 @@ namespace {
     }
   }
   
-
+  /// Contains code to be run statically at program initialization
   struct RunThisStatically {
     RunThisStatically() {
       Inspector = nullptr;
@@ -386,7 +397,7 @@ namespace {
   class SafeEventCollector {
     
     struct ltstr {
-      bool operator()(const char* s1, const char* s2) const
+      bool operator()(const char* s1, const char* s2) const noexcept
       {
         return strcmp(s1, s2) < 0;
       }
@@ -399,7 +410,8 @@ namespace {
     
     SafeEventCollector() = default;
     
-    int registerEvent(const char *name) noexcept
+    /// Registers the event if not registered and returns its code
+    int registerEvent(const char *name)
     { int num;
       
       access_control_.reader_enter();
@@ -426,6 +438,7 @@ namespace {
       return num;
     }
 
+    /// Get the string associated to an event number
     const char *name(unsigned event) const noexcept
     {
       for(const auto& pairs : eventNames_) {
@@ -450,9 +463,10 @@ namespace {
 
 } // anonymous namespace
 
+
 namespace ThreadInstrument {
 
-  EventData& EventData::operator+= (const EventData& other) {
+  EventData& EventData::operator+= (const EventData& other) noexcept {
     time += other.time;
     invocations += other.invocations;
     currentlyRunning = currentlyRunning || other.currentlyRunning;
@@ -490,7 +504,7 @@ namespace internal {
 
 }; // internal
 
-  unsigned nThreadsWithActivity()
+  unsigned nThreadsWithActivity() noexcept
   {
     return GlobalEventMap.unsafe_size();
   }
@@ -525,7 +539,7 @@ namespace internal {
     return m;
   }
   
-  void clearAllActivity()
+  void clearAllActivity() noexcept
   {
     for (Thr2Ev_t::iterator it = GlobalEventMap.begin(); it != GlobalEventMap.end(); ++it) {
       it->second.int2EventDataMap_.clear();
@@ -559,7 +573,7 @@ namespace internal {
     return TheSafeEventCollector().registerEvent(event);
   }
   
-  const char *getEventName(int event)
+  const char *getEventName(const int event) noexcept
   {
     return TheSafeEventCollector().name(event);
   }
@@ -589,6 +603,7 @@ namespace internal {
   }
 
 }; // internal
+
 
   void dumpLog(std::ostream& s)
   { char buf_final[256];

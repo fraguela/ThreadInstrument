@@ -3,7 +3,7 @@ namespace ThreadInstrument {
    @mainpage  ThreadInstrument
    
    @author   Basilio B. Fraguela <basilio.fraguela@udc.es>
-   @copyright Copyright (C) 2012-2017 Basilio B. Fraguela. Universidade da Coruna. Distributed under the MIT License.
+   @copyright Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna. Distributed under the MIT License.
   
    A library to help analyze applications parallelized with threads.
    
@@ -57,7 +57,7 @@ namespace ThreadInstrument {
    where the \c data argument allows to store additional information. In the <tt>void *</tt> versions 
    this argument is optional and it defaults to \c nullptr. The \c timed argument indicates
    whether the timing of the event should be recorded, and it defaults to \c false. When dumped, 
-   timed entries add the number of seconds since the beginning of the program until the event
+   timed entries include the time in seconds since the beginning of the program until the event
    was recorded.
 
    Often we want to log the beginning and the end of an activity. Two helper macros, ::THREADINSTRUMENT_TIMED_LOG and

@@ -1,3 +1,15 @@
+/*
+ ThreadInstrument: Library to monitor thread activity
+ Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna
+ 
+ Distributed under the MIT License. (See accompanying file LICENSE)
+ */
+
+///
+/// \file     pictureTime.cpp
+/// \brief    application to generate graph representations from ThreadInstrument logs
+/// \author   Basilio B. Fraguela <basilio.fraguela@udc.es>
+///
 #include <unistd.h>
 #include <cstring>
 #include <cstdio>

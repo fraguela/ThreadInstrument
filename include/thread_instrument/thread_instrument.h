@@ -1,6 +1,6 @@
 /*
  ThreadInstrument: Library to monitor thread activity
- Copyright (C) 2012-2017 Basilio B. Fraguela. Universidade da Coruna
+ Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna
  
  Distributed under the MIT License. (See accompanying file LICENSE)
 */
@@ -41,11 +41,11 @@ namespace ThreadInstrument {
     {}
     
     /// Adds the data of another EventData to this one
-    EventData& operator+= (const EventData& other);
+    EventData& operator+= (const EventData& other) noexcept;
   };
   
   /// Associates each event code (an int) with its data
-  typedef std::map<int, ThreadInstrument::EventData> Int2EventDataMap_t;
+  using Int2EventDataMap_t = std::map<int, ThreadInstrument::EventData>;
   
   namespace internal {
     void begin_activity_inner(int activity);
@@ -54,7 +54,7 @@ namespace ThreadInstrument {
   };
 
   /// Reports the number of threads with some activity reported
-  unsigned nThreadsWithActivity();
+  unsigned nThreadsWithActivity() noexcept;
   
   /// Get the number for the calling thread
   unsigned getMyThreadNumber();
@@ -69,7 +69,7 @@ namespace ThreadInstrument {
   Int2EventDataMap_t getAllActivity();
 
   /// Clears all the activity statistics, although the numbering of the known threads will be remembered
-  void clearAllActivity();
+  void clearAllActivity() noexcept;
 
   /// Print the data for the events in a ::Int2EventDataMap_t in the ostream \c s (defaults to std::cout)
   /**
@@ -97,7 +97,7 @@ namespace ThreadInstrument {
   int getEventNumber(const char *event);
   
   /// Gets the name of an event number collected using ::GetEventNumber
-  const char *getEventName(int event);
+  const char *getEventName(const int event) noexcept;
 
   /// Records the beginning of an \c activity
   inline void beginActivity(int activity) {
@@ -232,17 +232,17 @@ namespace ThreadInstrument {
     ThreadInstrument::endActivity(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__));                              \
   }
 
-#define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...) {                                                                \
+#define THREADINSTRUMENT_INTL_LOG(STR_ID, DO_TIMING, ...) {                                                                \
     static const int THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__) = ThreadInstrument::getEventNumber(STR_ID); \
-    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 0, DOTIMING);                         \
+    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 0, DO_TIMING);                         \
     __VA_ARGS__;                                                                                                          \
-    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 1, DOTIMING);                         \
+    ThreadInstrument::log(THREADINSTRUMENT_COMBINE(_threadinstrument_idx,__LINE__), 1, DO_TIMING);                         \
   }
   
 #else  //THREADINSTRUMENT
 
-#define THREADINSTRUMENT_INTL_PROF(STR_ID, ...)           __VA_ARGS__
-#define THREADINSTRUMENT_INTL_LOG(STR_ID, DOTIMING, ...)  __VA_ARGS__
+#define THREADINSTRUMENT_INTL_PROF(STR_ID, ...)            __VA_ARGS__
+#define THREADINSTRUMENT_INTL_LOG(STR_ID, DO_TIMING, ...)  __VA_ARGS__
 
 #endif //THREADINSTRUMENT
 

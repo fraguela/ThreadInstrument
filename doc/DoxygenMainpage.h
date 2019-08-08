@@ -3,7 +3,7 @@ namespace ThreadInstrument {
    @mainpage  ThreadInstrument
    
    @author   Basilio B. Fraguela <basilio.fraguela@udc.es>
-   @copyright Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna. Distributed under the MIT License.
+   @copyright Copyright (C) 2012-2019 Basilio B. Fraguela. Universidade da Coruna. Distributed under the MIT License.
   
    A library to help analyze applications parallelized with threads.
    

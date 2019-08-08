@@ -1,6 +1,6 @@
 /*
  ThreadInstrument: Library to monitor thread activity
- Copyright (C) 2012-2018 Basilio B. Fraguela. Universidade da Coruna
+ Copyright (C) 2012-2019 Basilio B. Fraguela. Universidade da Coruna
  
  Distributed under the MIT License. (See accompanying file LICENSE)
  */

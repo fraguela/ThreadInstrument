@@ -19,6 +19,7 @@
 #include <chrono>
 #include <map>
 #include <string>
+#include <functional>
 
 /// Contains all the library API
 namespace ThreadInstrument {
@@ -159,27 +160,27 @@ namespace ThreadInstrument {
   void logLimit(unsigned nlogs);
   
   /// Transform the data associated to a log entry of a given event type into a std::string
-  using LogPrinter_t = std::string (*)(void *);
+  using LogPrinter_t = std::function<std::string(void *)>;
   
   /// Transform the data associated to any log entry into a std::string
-  using AllLogPrinter_t = std::string (*)(int, void *);
+  using AllLogPrinter_t = std::function<std::string(int, void *)>;
   
   /// Registers the function used to build a string that represents each event when dumpLog is invoked
   /** @param event   log event whose printing function is defined
    *  @param printer function that takes the pointer to the event data and returns a string representing it
    */
-  void registerLogPrinter(int event, LogPrinter_t printer);
+  void registerLogPrinter(int event, const LogPrinter_t& printer);
 
   /// Registers the function used to build a string that represents each event when dumpLog is invoked
   /** @param event   log event whose printing function is defined
    *  @param printer function that takes the pointer to the event data and returns a string representing it
    */
-  void registerLogPrinter(const char *event, LogPrinter_t printer);
+  void registerLogPrinter(const char *event, const LogPrinter_t& printer);
   
   /// Registers a function used to build a string that represents any event when dumpLog is invoked
   /// Specific printers take precedence on this one.
   /** @param printer function that takes the event number and the pointer to the event data and returns a string representing it */
-  void registerLogPrinter(AllLogPrinter_t printer);
+  void registerLogPrinter(const AllLogPrinter_t& printer);
 
   /// Printer used by default for the logged events
   std::string defaultPrinter(int event, void *p);

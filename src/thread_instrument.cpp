@@ -360,7 +360,7 @@ namespace {
   ConcurrentSList<LogEvent> Log;
 
   /// Control whether the Log is locked
-  bool Locked_Log = false;
+  volatile bool Locked_Log = false;
 
   /// Provides printer for each kind of event
   std::map<unsigned, ThreadInstrument::LogPrinter_t> LogPrinters;
@@ -640,12 +640,12 @@ namespace internal {
       const unsigned thread_num = GetThreadRawData(l.id_).id_;
       const double when = std::chrono::duration<double>(l.when_ - StartExecutionTimePoint).count();
       const std::map<unsigned, LogPrinter_t>::const_iterator it = LogPrinters.find(l.event_id_);
-      std::string event_representation = (it != itend) ? (*((*it).second))(l.data_) : (*AllLogPrinter)(l.event_id_, l.data_);
+      std::string event_representation = (it != itend) ? ((*it).second)(l.data_) : AllLogPrinter(l.event_id_, l.data_);
 
       if (when > 0.) {
-        sprintf(buf_final, "Th %3u %lf %s\n", thread_num, when, event_representation.c_str());
+        sprintf(buf_final, "Th%3u %lf %s\n", thread_num, when, event_representation.c_str());
       } else {
-        sprintf(buf_final, "Th %3u %s\n", thread_num, event_representation.c_str());
+        sprintf(buf_final, "Th%3u %s\n", thread_num, event_representation.c_str());
       }
     
       s << buf_final;
@@ -683,25 +683,19 @@ namespace internal {
     LogLimit = nlogs;
   }
   
-  void registerLogPrinter(int event, LogPrinter_t printer)
+  void registerLogPrinter(int event, const LogPrinter_t& printer)
   {
-    if (printer == nullptr) {
-      LogPrinters.erase(event);
-    } else {
-      LogPrinters[event] = printer;
-    }
+    LogPrinters[event] = printer;
   }
   
-  void registerLogPrinter(const char *event, LogPrinter_t printer)
+  void registerLogPrinter(const char *event, const LogPrinter_t& printer)
   {
     registerLogPrinter(getEventNumber(event), printer);
   }
   
-  void registerLogPrinter(AllLogPrinter_t printer)
+  void registerLogPrinter(const AllLogPrinter_t& printer)
   {
-    AllLogPrinter = (printer == nullptr) ? defaultPrinter : printer;
-
-    assert(AllLogPrinter != nullptr);
+    AllLogPrinter = printer;
   }
 
   std::string pictureTimePrinter(int event, void *p)

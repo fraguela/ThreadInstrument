@@ -13,7 +13,7 @@ add_definitions( -DTHREADINSTRUMENT )
 link_libraries( thread_instrument )
 
 # Tests based on C++11 threads
-set(tests pfor pfor_simpl pfor_simpl2 pforlog pforlog_simpl bench )
+set(tests pfor pfor_simpl pfor_simpl2 pforlog pforlog_simpl string_log bench )
 
 foreach(test ${tests})
   add_executable( ${test} ${test}.cpp )

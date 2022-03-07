@@ -1,6 +1,6 @@
 /*
  ThreadInstrument: Library to monitor thread activity
- Copyright (C) 2012-2019 Basilio B. Fraguela. Universidade da Coruna
+ Copyright (C) 2012-2022 Basilio B. Fraguela. Universidade da Coruna
  
  Distributed under the MIT License. (See accompanying file LICENSE)
 */
@@ -326,9 +326,9 @@ namespace {
 
     return ret;
   }
-  
+
   /////////////////////////// LOGS ///////////////////////////
-  
+
   /// Records the beginning of the execution of the program
   const ThreadInstrument::time_point_t StartExecutionTimePoint = ThreadInstrument::clock_t::now();
 
@@ -338,25 +338,29 @@ namespace {
     ThreadInstrument::time_point_t when_;
     void *data_;
     unsigned event_id_;
-    
+
     LogEvent(ThreadInstrument::time_point_t when, unsigned event_id, void *data) noexcept
     : id_(std::this_thread::get_id()), when_(when), data_(data), event_id_(event_id)
     { }
-    
+
     LogEvent(unsigned event_id, void *data) noexcept
     : id_(std::this_thread::get_id()), data_(data), event_id_(event_id)
     { }
-    
-    LogEvent() {}
+
+    LogEvent()
+    {}
 
   };
-  
+
   /// Maximum number of log events to dump. By default there is no limit
   /** @internal Notice that all the event are actually logged; but only the last LogLimit ones are dumped. */
   unsigned LogLimit = 0;
 
   /// Log storage
   ConcurrentSList<LogEvent> Log;
+
+  /// Control whether the Log is locked
+  bool Locked_Log = false;
 
   /// Provides printer for each kind of event
   std::map<unsigned, ThreadInstrument::LogPrinter_t> LogPrinters;
@@ -584,22 +588,30 @@ namespace internal {
   
   void log_inner(unsigned event, void *data)
   {
-    Log.push(LogEvent(event, data));
+    if (!Locked_Log) {
+      Log.push(LogEvent(event, data));
+    }
   }
-  
+
   void log_inner(unsigned event, int data)
   {
-    Log.push(LogEvent(event, reinterpret_cast<void*>(data)));
+    if (!Locked_Log) {
+      Log.push(LogEvent(event, reinterpret_cast<void*>(data)));
+    }
   }
-  
+
   void timed_log_inner(unsigned event, void *data)
   {
-    Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, data));
+    if (!Locked_Log) {
+      Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, data));
+    }
   }
-  
+
   void timed_log_inner(unsigned event, int data)
   {
-    Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, reinterpret_cast<void*>(data)));
+    if (!Locked_Log) {
+      Log.push(LogEvent(ThreadInstrument::clock_t::now(), event, reinterpret_cast<void*>(data)));
+    }
   }
 
 }; // internal
@@ -656,6 +668,16 @@ namespace internal {
     Log.clear();
   }
   
+  void LockLog()
+  {
+    Locked_Log = true;
+  }
+
+  void UnlockLog()
+  {
+    Locked_Log = false;
+  }
+
   void logLimit(unsigned nlogs)
   {
     LogLimit = nlogs;

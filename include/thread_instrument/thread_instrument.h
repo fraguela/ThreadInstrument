@@ -1,6 +1,6 @@
 /*
  ThreadInstrument: Library to monitor thread activity
- Copyright (C) 2012-2019 Basilio B. Fraguela. Universidade da Coruna
+ Copyright (C) 2012-2022 Basilio B. Fraguela. Universidade da Coruna
  
  Distributed under the MIT License. (See accompanying file LICENSE)
 */
@@ -148,6 +148,12 @@ namespace ThreadInstrument {
 
   /// Clears the log
   void clearLog();
+
+  /// Locks the log so that further log attempts are disregarded
+  void LockLog();
+
+  /// Unlocks the log
+  void UnlockLog();
 
   /// Sets a maximum number of log entries to print
   void logLimit(unsigned nlogs);
